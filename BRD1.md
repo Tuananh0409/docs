@@ -298,7 +298,7 @@ Hiện này công ty đang mở rộng quy mô và cần một công cụ để 
 
 ## 9. Ràng buộc & Giả định
 ### 9.1. Ràng buộc
-# 📊 System Constraints - Project Management System (Simplified)
+# System Constraints - Project Management System (Simplified)
 
 | ID   | Loại        | Mô tả                                           | Ví dụ |
 |------|------------|-------------------------------------------------|------|
