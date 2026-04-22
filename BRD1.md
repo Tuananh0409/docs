@@ -298,3 +298,48 @@ Hiện này công ty đang mở rộng quy mô và cần một công cụ để 
 
 ## 9. Ràng buộc & Giả định
 ### 9.1. Ràng buộc
+
+# 📊 System Constraints - Project Management System (Simplified)
+
+| ID   | Loại        | Mô tả                                           | Ví dụ |
+|------|------------|-------------------------------------------------|------|
+| C-01 | Business   | Hệ thống phải có cấu trúc phân cấp              | Workspace → Project → Task |
+| C-02 | Business   | Task phải theo workflow cố định                 | To Do → In Progress → Done |
+| C-03 | Business   | Phân quyền theo vai trò                         | Admin tạo, Member sửa task |
+| C-04 | Data       | 1 số Field phải unique                          | Email không trùng |
+| C-05 | Data       | Đúng kiểu dữ liệu                               | Deadline là datetime |
+| C-06 | Data       | Phải có quan hệ giữa các bảng                   | Task thuộc Project |
+| C-07 | Data       | Giá trị trong khoảng hợp lệ                     | Priority 1–5 |
+| C-08 | Technical  | Bị ràng buộc công nghệ                          | Backend dùng Java Spring Boot |
+| C-09 | Technical  | Ràng buộc loại database                         | PostgreSQL |
+| C-10 | Technical  | Chuẩn API                                       | REST hoặc GraphQL |
+| C-11 | Technical  | Hiệu năng hệ thống                              | API < 3s |
+| C-12 | UI/UX      | Dễ sử dụng                                     | Drag & drop task |
+| C-13 | Security   | Xác thực người dùng                             | JWT |
+| C-14 | Security   | Phân quyền truy cập                             | RBAC |
+| C-15 | Security   | Bảo mật dữ liệu                                | Hash password |
+| C-16 | Security   | Ghi log hoạt động                               | Log chỉnh sửa |
+| C-17 | Legal      | Tuân thủ pháp luật                              | GDPR |
+| C-18 | Legal      | Bảo vệ quyền riêng tư                           | Không lộ data |
+| C-19 | Operational| Khả năng mở rộng                                | Scale user |
+| C-20 | Operational| Backup dữ liệu                                  | Backup hằng ngày |
+
+### 9.2. Giả định (Assumptions)
+
+| ID   | Loại        | Mô tả                                           | Ví dụ |
+|------|------------|-------------------------------------------------|------|
+| A-01 | Business   | Người dùng hiểu quy trình quản lý dự án cơ bản   | Biết Task, Deadline, Status |
+| A-02 | Business   | Người dùng sẽ cập nhật tiến độ thường xuyên      | Update task mỗi ngày |
+| A-03 | Business   | Mỗi project có ít nhất 1 người quản lý           | Có Project Owner |
+| A-04 | Data       | Dữ liệu nhập vào là hợp lệ                       | Không nhập sai định dạng |
+| A-05 | Data       | Số lượng dữ liệu tăng theo thời gian             | Task ngày càng nhiều |
+| A-06 | Data       | Các entity luôn có liên kết hợp lệ               | Task luôn có Project |
+| A-07 | Technical  | Server đủ tài nguyên để xử lý                    | RAM, CPU đủ |
+| A-08 | Technical  | Trình duyệt người dùng hiện đại                  | Chrome, Edge mới |
+| A-09 | UI/UX      | Người dùng quen với UI web                       | Biết click, drag |
+| A-10 | UI/UX      | Người dùng không cần training quá nhiều          | UI trực quan |
+| A-11 | Security   | Người dùng bảo mật tài khoản cá nhân             | Không chia sẻ password |
+| A-12 | Security   | Không có tấn công lớn trong giai đoạn đầu        | Không bị hack |
+| A-13 | Security   | Hệ thống không cần bảo mật cấp ngân hàng         | Chỉ mức web app |
+| A-14 | Operational| Hệ thống có đội vận hành                         | Có dev/ops |
+| A-15 | Operational| Backup được thực hiện đúng kế hoạch              | Backup hàng ngày |
