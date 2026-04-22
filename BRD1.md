@@ -296,5 +296,18 @@ Hiện này công ty đang mở rộng quy mô và cần một công cụ để 
 | **Related time** | User ←[authenticates]→ SystemUser ←[has]→ Credential |
 | **Giá trị** | Đảm bảo bảo mật và kiểm soát truy cập. |
 
-## 9. Ràng buộc & Giả định
-### 9.1. Ràng buộc
+## 10.Phân tích rủi ro
+| ID | Rủi ro | Xác suất | Tác động | Chiến lược giảm thiểu |
+|----|--------|----------|----------|-----------------------|
+| **R-01** | Scope creep – yêu cầu thay đổi liên tục | Cao | Cao | Define scope rõ ràng; quản lý change request; approval trước khi thay đổi |
+| **R-02** | Người dùng không quen hệ thống mới | Trung bình | Cao | Training user; onboarding guide; cải thiện UX |
+| **R-03** | Thiết kế hệ thống không phù hợp | Trung bình | Cao | Review kiến trúc sớm; validate với mentor/team |
+| **R-04** | Hiệu năng kém khi số lượng task lớn | Thấp | Trung bình | Áp dụng pagination; indexing DB; caching |
+| **R-05** | Thiếu kinh nghiệm phát triển hệ PMS | Trung bình | Trung bình | Tham khảo mô hình Jira/ClickUp; research trước khi build |
+| **R-06** | Workflow phức tạp khó implement | Trung bình | Cao | Thiết kế workflow đơn giản trước; mở rộng sau |
+| **R-07** | Lỗi phân quyền gây lộ dữ liệu | Thấp | Cao | Kiểm tra RBAC kỹ; viết middleware auth |
+| **R-08** | Dữ liệu không nhất quán | Thấp | Trung bình | Áp dụng validation; constraint DB; transaction |
+| **R-09** | Chậm tiến độ phát triển | Trung bình | Cao | Chia phase rõ ràng; ưu tiên core feature |
+| **R-010** | Bug khi triển khai production | Trung bình | Cao | Testing đầy đủ; staging environment trước khi deploy |
+| **R-011** | Khó mở rộng hệ thống sau này | Thấp | Trung bình | Thiết kế modular; tách service rõ ràng |
+| **R-012** | Người dùng không sử dụng hết tính năng | Trung bình | Thấp | Thiết kế UI đơn giản; chỉ build feature cần thiết |
