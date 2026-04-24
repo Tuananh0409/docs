@@ -69,6 +69,7 @@ Workspace → Project → Milestone → Task → User
 ### 3.2. Mô tả các bước trong mô hình
 
 | STT | Bước quy trình | Người thực hiện | Mô tả bước thực hiện |
+|-----|----------------|-----------------|----------------------|
 | 1 | Thiết lập Workspace và người dùng | Admin | Tạo workspace cho phòng ban, thêm người dùng, gán vai trò và phân quyền truy cập hệ thống |
 | 2 | Khởi tạo Project & phân quyền | Manager | Tạo dự án, nhập thông tin cơ bản và thiết lập quyền trong project, bao gồm việc chỉ định Lead (nếu có) để hỗ trợ quản lý và phân công công việc. |
 | 3 | Lập kế hoạch & tạo Task | Manager / Lead | Xây dựng milestone và tạo các, xác định nội dung công, độ ưu, deadline và phạm vi thực hiện |
@@ -82,7 +83,6 @@ Workspace → Project → Milestone → Task → User
 
 | # | Chức năng | Mô tả | Kết quả mong đợi |
 |---|-----------|-------|
-
 | **FR-01** | Tạo workspace | Cho phép Admin tạo workspace với tên, mô tả | Workspace được tạo thành công và hiển thị trong danh sách |
 | **FR-02** | Cập nhật workspace | Workspace Admin chỉnh sửa các thông tin như tên, mô tả hoặc cấu hình của workspace hiện tại | Thông tin workspace được cập nhật chính xác |
 | **FR-03** | Xóa workspace | Workspace Admin thực hiện thao tác xóa workspace và xác nhận hành động này | Workspace bị xóa khỏi hệ thống |
@@ -96,7 +96,6 @@ Workspace → Project → Milestone → Task → User
 
 | # | Chức năng | Mô tả | Kết quả mong đợi |
 |---|-----------|-------|------------------|
-
 | **FR-01** | Xem danh sách workspace | Member truy cập và xem danh sách workspace mà mình được tham gia | Danh sách workspace hiển thị |
 | **FR-02** | Xem chi tiết workspace | Member truy cập workspace để xem các thông tin cơ bản | Thông tin workspace hiển thị |
 | **FR-03** | Xem chi tiết workspace | Member truy cập workspace để xem các thông tin cơ bản | Thông tin workspace hiển thị |
@@ -106,6 +105,7 @@ Workspace → Project → Milestone → Task → User
 #### 4.2.1. Project Admin
 
 | # | Chức năng | Mô tả | Kết quả |
+|---|-----------|-------|---------|
 | **FR-01** | Tạo project | Admin tạo một project mới trong workspace bằng cách nhập thông tin cần thiết | Project được tạo thành công |
 | **FR-02** | Cập nhật project | Admin chỉnh sửa thông tin của project như tên, mô tả hoặc trạng thái | Thông tin project được cập nhật |
 | **FR-03** | Xóa project | Admin thực hiện xóa project khỏi hệ thống | Project bị xóa |
