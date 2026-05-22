@@ -11,16 +11,22 @@ import { newToastId } from "@/shared/components/files/pendingFiles";
 
 export type ToastVariant = "success" | "error" | "info";
 
+export type ToastAction = {
+  label: string;
+  onClick: () => void;
+};
+
 type ToastItem = {
   id: string;
   message: string;
   variant: ToastVariant;
+  actions?: ToastAction[];
 };
 
 type ToastApi = {
-  success: (message: string) => void;
-  error: (message: string) => void;
-  info: (message: string) => void;
+  success: (message: string, actions?: ToastAction[]) => void;
+  error: (message: string, actions?: ToastAction[]) => void;
+  info: (message: string, actions?: ToastAction[]) => void;
 };
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -83,7 +89,23 @@ function ToastCard({
       className={`pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg shadow-slate-900/10 transition ${styles}`}
     >
       <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${iconClass}`} strokeWidth={2} aria-hidden />
-      <p className="flex-1 text-sm font-medium leading-snug">{toast.message}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium leading-snug">{toast.message}</p>
+        {toast.actions && toast.actions.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {toast.actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                onClick={action.onClick}
+                className="text-xs font-semibold underline underline-offset-2 opacity-90 hover:opacity-100"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <button
         type="button"
         onClick={() => onDismiss(toast.id)}
@@ -104,19 +126,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, variant: ToastVariant) => {
+    (message: string, variant: ToastVariant, actions?: ToastAction[]) => {
       const id = newToastId();
-      setToasts((prev) => [...prev, { id, message, variant }]);
-      window.setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
+      setToasts((prev) => [...prev, { id, message, variant, actions }]);
+      const dismissMs = actions?.length ? 8000 : AUTO_DISMISS_MS;
+      window.setTimeout(() => dismiss(id), dismissMs);
     },
     [dismiss],
   );
 
   const api = useMemo<ToastApi>(
     () => ({
-      success: (message) => showToast(message, "success"),
-      error: (message) => showToast(message, "error"),
-      info: (message) => showToast(message, "info"),
+      success: (message, actions) => showToast(message, "success", actions),
+      error: (message, actions) => showToast(message, "error", actions),
+      info: (message, actions) => showToast(message, "info", actions),
     }),
     [showToast],
   );

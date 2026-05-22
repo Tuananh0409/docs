@@ -22,6 +22,7 @@ import { ProjectSettingsPanel } from "../components/project-views/ProjectSetting
 import { ProjectSummaryTab } from "../components/project-views/ProjectSummaryTab";
 import { projectApi } from "../api/projectApi";
 import { mergeProjectDetail } from "../utils/projectPriority";
+import { canManageProjectMembers } from "../utils/projectRoles";
 import type { ProjectDetail, ProjectMember, UpdateProjectPayload } from "../types";
 
 function toDateInput(iso: string | null) {
@@ -104,9 +105,11 @@ export function ProjectDetailPage() {
         proj.projectLeadUserId != null ? String(proj.projectLeadUserId) : "",
       );
 
-      if (canManageProject(proj)) {
+      if (canManageProjectMembers(proj.myRole)) {
         const wsMem = await workspaceApi.listMembers(workspaceSlug);
         setWorkspaceMembers(wsMem);
+      } else {
+        setWorkspaceMembers([]);
       }
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Không tải được dự án");
@@ -253,7 +256,14 @@ export function ProjectDetailPage() {
   if (!project || !workspaceSlug || !projectSlug) return null;
 
   const manage = canManageProject(project);
+  const manageMembers = canManageProjectMembers(project.myRole);
   const allowPriorityEdit = canEditPriority(project);
+
+  async function reloadMembers() {
+    if (!workspaceSlug || !projectSlug) return;
+    const mem = await projectApi.listMembers(workspaceSlug, projectSlug);
+    setMembers(mem);
+  }
   const writeTasks = canWriteTasks(project.myRole);
   const isWsAdmin = project.myRole?.toLowerCase() === "admin";
   const isProjectMember = project.myRole != null || isWsAdmin;
@@ -297,8 +307,11 @@ export function ProjectDetailPage() {
             workspaceSlug={workspaceSlug}
             projectSlug={projectSlug}
             members={members}
+            workspaceMembers={workspaceMembers}
             canUpload={isProjectMember}
             canManageProject={manage}
+            canManageMembers={manageMembers}
+            onMembersChanged={reloadMembers}
             canEditPriority={allowPriorityEdit}
             onPriorityChange={allowPriorityEdit ? handlePriorityChange : undefined}
             onStatusChange={manage ? handleStatusChange : undefined}

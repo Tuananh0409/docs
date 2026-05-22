@@ -1,18 +1,68 @@
 import type { TaskStatus, TaskSummary } from "../types";
+import {
+  DEFAULT_TASK_PRIORITY,
+  TASK_PRIORITY_OPTIONS,
+  taskPriorityColor,
+  type TaskPriorityName,
+} from "@/shared/config/task-priority-options";
+import type { TaskPriorityOption } from "../hooks/useTaskPriorities";
 
-export const PRIORITIES = ["Urgent", "High", "Medium", "Low"] as const;
+export { DEFAULT_TASK_PRIORITY };
+export type { TaskPriorityName };
 
-export function priorityColor(priority: string): string {
-  switch (priority) {
-    case "Urgent":
-      return "#ef4444";
-    case "High":
-      return "#f97316";
-    case "Low":
-      return "#94a3b8";
-    default:
-      return "#eab308";
-  }
+/** Thứ tự dropdown (cao → thấp) — ưu tiên danh sách từ API. */
+export function sortTaskPriorities(options: TaskPriorityOption[]): TaskPriorityOption[] {
+  return [...options].sort((a, b) => b.weight - a.weight);
+}
+
+export function priorityNames(options: TaskPriorityOption[]): TaskPriorityName[] {
+  return sortTaskPriorities(options).map((p) => p.name);
+}
+
+export function normalizeTaskPriority(
+  priority: string | null | undefined,
+  options: readonly { name: string }[] = TASK_PRIORITY_OPTIONS,
+): TaskPriorityName {
+  const raw = (priority ?? "").trim().toLowerCase();
+  if (raw === "lowest") return "Lowest";
+  if (raw === "urgent" || raw === "highest") return "Highest";
+  if (raw === "high") return "High";
+  if (raw === "medium") return "Medium";
+  if (raw === "low") return "Low";
+  const hit = options.find((p) => p.name.toLowerCase() === raw);
+  return (hit?.name as TaskPriorityName) ?? DEFAULT_TASK_PRIORITY;
+}
+
+export function priorityColor(
+  priority: string | null | undefined,
+  options?: TaskPriorityOption[],
+  colorCode?: string | null,
+): string {
+  if (colorCode) return colorCode;
+  const name = normalizeTaskPriority(priority, options ?? TASK_PRIORITY_OPTIONS);
+  const list = options ?? TASK_PRIORITY_OPTIONS;
+  const opt = list.find((p) => p.name.toLowerCase() === name.toLowerCase());
+  const code =
+    opt && "colorCode" in opt
+      ? opt.colorCode
+      : opt && "color" in opt
+        ? (opt as { color: string }).color
+        : null;
+  return taskPriorityColor(name, code);
+}
+
+export function taskPriorityName(task: { priorityName?: string | null }): string {
+  return task.priorityName ?? DEFAULT_TASK_PRIORITY;
+}
+
+export function priorityMenuItemClass(selected: boolean, compact = false): string {
+  const base = compact
+    ? "relative flex w-full items-center gap-2 py-1.5 text-left text-xs text-[#42526E]"
+    : "relative flex w-full items-center gap-2.5 py-2 text-left text-sm text-[#42526E]";
+  const pad = selected
+    ? "border-l-[3px] border-l-[#0052CC] bg-[#F4F5F7] pl-2.5"
+    : "border-l-[3px] border-l-transparent pl-2.5";
+  return `${base} ${pad} hover:bg-[#F4F5F7]`;
 }
 
 export function formatDeadline(iso: string | null): string {

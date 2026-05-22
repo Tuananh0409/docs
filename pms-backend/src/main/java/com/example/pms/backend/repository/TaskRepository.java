@@ -11,6 +11,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     @Query("""
             SELECT t FROM Task t
+            LEFT JOIN FETCH t.priority
             LEFT JOIN FETCH t.status
             LEFT JOIN FETCH t.createdBy
             LEFT JOIN FETCH t.milestone
@@ -21,6 +22,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     @Query("""
             SELECT t FROM Task t
+            LEFT JOIN FETCH t.priority
             LEFT JOIN FETCH t.status
             LEFT JOIN FETCH t.project p
             LEFT JOIN FETCH p.workspace
@@ -33,6 +35,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @Query("""
             SELECT DISTINCT t FROM Task t
             JOIN TaskAssignee ta ON ta.task.id = t.id
+            LEFT JOIN FETCH t.priority
             LEFT JOIN FETCH t.status
             LEFT JOIN FETCH t.project p
             LEFT JOIN FETCH p.workspace

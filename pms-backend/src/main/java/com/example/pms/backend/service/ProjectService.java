@@ -212,7 +212,7 @@ public class ProjectService {
             Long workspaceId, Long projectId, AddProjectMemberRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        requireProjectMemberManage(project, currentUser.getId());
 
         User user = userRepository
                 .findById(request.getUserId())
@@ -230,7 +230,7 @@ public class ProjectService {
             UpdateProjectMemberRoleRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        requireProjectMemberManage(project, currentUser.getId());
 
         ProjectMember member = projectMemberRepository
                 .findByProjectIdAndUserId(projectId, userId)
@@ -256,7 +256,7 @@ public class ProjectService {
     public void removeMember(Long workspaceId, Long projectId, Long userId) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        requireProjectMemberManage(project, currentUser.getId());
 
         ProjectMember member = projectMemberRepository
                 .findByProjectIdAndUserId(projectId, userId)
@@ -319,6 +319,18 @@ public class ProjectService {
                     return ROLE_PM.equalsIgnoreCase(role) || "Lead".equalsIgnoreCase(role);
                 })
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_FORBIDDEN));
+    }
+
+    /** Thêm/sửa/xóa thành viên dự án: chỉ PM dự án hoặc Admin workspace. */
+    private void requireProjectMemberManage(Project project, Long userId) {
+        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
+            return;
+        }
+        projectMemberRepository
+                .findByProjectIdAndUserId(project.getId(), userId)
+                .filter(m -> ROLE_PM.equalsIgnoreCase(m.getRole().getRoleName()))
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.PROJECT_FORBIDDEN, "Chỉ PM dự án hoặc Admin workspace mới quản lý thành viên"));
     }
 
     private boolean isWorkspaceAdmin(Long workspaceId, Long userId) {

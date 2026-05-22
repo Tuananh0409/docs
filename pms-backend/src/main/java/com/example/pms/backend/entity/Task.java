@@ -48,9 +48,9 @@ public class Task {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private String priority = "Medium";
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "priority_id", nullable = false)
+    private TaskPriority priority;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "status_id")

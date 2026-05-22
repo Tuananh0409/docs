@@ -80,6 +80,7 @@ class TaskApiTest {
                         .content(createTaskJson))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.title").value("Implement login"))
+                .andExpect(jsonPath("$.priorityName").value("High"))
                 .andExpect(jsonPath("$.statusName").value("Todo"))
                 .andExpect(jsonPath("$.taskKey").exists())
                 .andReturn();

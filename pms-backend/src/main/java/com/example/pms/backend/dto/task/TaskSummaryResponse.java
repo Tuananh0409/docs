@@ -11,7 +11,9 @@ public class TaskSummaryResponse {
     Long id;
     String taskKey;
     String title;
-    String priority;
+    String priorityName;
+    String priorityColorCode;
+    Integer priorityWeight;
     Long statusId;
     String statusName;
     String statusColorCode;

@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Calendar } from "lucide-react";
 import { taskApi } from "@/features/task/api/taskApi";
+import type { Member } from "@/features/workspace/types";
 import type { ProjectDetail, ProjectMember } from "../../types";
+import { ProjectMembersSection } from "../ProjectMembersSection";
 import { Badge } from "@/shared/components/ui/Badge";
 import { ProjectPriorityBadge } from "../ProjectPriorityBadge";
 import { ProjectPrioritySelect } from "../ProjectPrioritySelect";
@@ -16,8 +18,11 @@ type Props = {
   workspaceSlug: string;
   projectSlug: string;
   members: ProjectMember[];
+  workspaceMembers?: Member[];
   canUpload: boolean;
   canManageProject?: boolean;
+  canManageMembers?: boolean;
+  onMembersChanged?: () => void | Promise<void>;
   canEditPriority?: boolean;
   onPriorityChange?: (priorityName: string) => void;
   onStatusChange?: (statusName: string) => void;
@@ -44,8 +49,11 @@ export function ProjectSummaryTab({
   workspaceSlug,
   projectSlug,
   members,
+  workspaceMembers = [],
   canUpload,
   canManageProject,
+  canManageMembers,
+  onMembersChanged,
   canEditPriority,
   onPriorityChange,
   onStatusChange,
@@ -151,22 +159,16 @@ export function ProjectSummaryTab({
           />
         )}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">
-            Thành viên ({members.length})
-          </h2>
-          <ul className="mt-4 divide-y divide-slate-100">
-            {members.map((m) => (
-              <li key={m.userId} className="flex items-center justify-between py-3">
-                <div>
-                  <p className="font-medium text-slate-900">{m.username}</p>
-                  <p className="text-xs text-slate-500">{m.email}</p>
-                </div>
-                <Badge variant="muted">{m.roleName}</Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {onMembersChanged && (
+          <ProjectMembersSection
+            workspaceSlug={workspaceSlug}
+            projectSlug={projectSlug}
+            members={members}
+            workspaceMembers={workspaceMembers}
+            canManageMembers={!!canManageMembers}
+            onMembersChanged={onMembersChanged}
+          />
+        )}
       </div>
     </div>
   );

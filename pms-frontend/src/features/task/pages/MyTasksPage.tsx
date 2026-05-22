@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { taskApi } from "../api/taskApi";
 import type { MyTask, MyTasksSummary } from "../types";
-import { formatDeadline, priorityColor } from "../utils/taskUi";
+import { formatDeadline } from "../utils/taskUi";
 import { ApiClientError } from "@/shared/api/client";
 import { PageHeader } from "@/shared/components/layout/PageHeader";
 import { ErrorAlert } from "@/shared/components/feedback/ErrorAlert";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { projectPath } from "@/shared/routes/paths";
 import { TaskAssigneeAvatars } from "../components/TaskAssigneeAvatars";
+import { TaskPriorityIcon } from "../components/TaskPriorityIcon";
 
 export function MyTasksPage() {
   const [tasks, setTasks] = useState<MyTask[]>([]);
@@ -105,12 +106,12 @@ export function MyTasksPage() {
               >
                 {task.statusName ?? "—"}
               </span>
-              <span
-                className="text-xs font-medium"
-                style={{ color: priorityColor(task.priority) }}
-              >
-                {task.priority}
-              </span>
+              <TaskPriorityIcon
+                priority={task.priorityName}
+                colorCode={task.priorityColorCode}
+                size="sm"
+                showLabel
+              />
               {task.deadline && (
                 <span
                   className={`text-xs ${task.overdue ? "font-medium text-red-600" : "text-slate-500"}`}

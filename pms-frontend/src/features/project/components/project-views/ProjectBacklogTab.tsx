@@ -2,21 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  Equal,
   GripHorizontal,
   Plus,
-  User,
 } from "lucide-react";
 import type { ProjectDetail, ProjectMember } from "../../types";
 import { taskApi } from "@/features/task/api/taskApi";
 import { TaskCreateModal } from "@/features/task/components/TaskCreateModal";
 import { TaskDetailModal } from "@/features/task/components/TaskDetailModal";
+import { TaskPriorityAssigneeRow } from "@/features/task/components/TaskInlineAssignee";
+import { TaskPriorityIcon } from "@/features/task/components/TaskPriorityIcon";
 import type { TaskStatus, TaskSummary } from "@/features/task/types";
 import {
   countByStatus,
   filterTasksByQuery,
   formatDeadline,
-  priorityColor,
 } from "@/features/task/utils/taskUi";
 import { ApiClientError } from "@/shared/api/client";
 import { ErrorAlert } from "@/shared/components/feedback/ErrorAlert";
@@ -65,7 +64,7 @@ export function ProjectBacklogTab({
       setTasks(taskList);
       setStatuses(statusList);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : "Không tải được task");
+      setError(err instanceof ApiClientError ? err.message : "Không tải được công việc");
     } finally {
       setLoading(false);
     }
@@ -131,7 +130,7 @@ export function ProjectBacklogTab({
             )}
             Board
             <span className="font-normal text-slate-500">
-              ({boardTasks.length} work items)
+              ({boardTasks.length} công việc)
             </span>
           </button>
           <StatusCountPills pills={statusPills} />
@@ -159,9 +158,13 @@ export function ProjectBacklogTab({
                     key={task.id}
                     task={task}
                     statuses={statuses}
+                    members={members}
+                    workspaceSlug={workspaceSlug}
+                    projectSlug={projectSlug}
                     canWrite={canWrite}
                     onOpen={() => setDetailTaskId(task.id)}
                     onStatusChange={(name) => handleStatusChange(task.id, name)}
+                    onAssigneesUpdated={load}
                   />
                 ))}
               </ul>
@@ -188,7 +191,7 @@ export function ProjectBacklogTab({
             )}
             Backlog
             <span className="font-normal text-slate-500">
-              ({backlogTasks.length} work items)
+              ({backlogTasks.length} công việc)
             </span>
           </button>
           <StatusCountPills pills={statusPills} />
@@ -199,7 +202,7 @@ export function ProjectBacklogTab({
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {backlogTasks.length === 0 ? (
                 <li className="px-4 py-8 text-center text-sm text-slate-500">
-                  Chưa có task trong backlog.
+                  Chưa có công việc trong backlog.
                 </li>
               ) : (
                 backlogTasks.map((task) => (
@@ -207,9 +210,13 @@ export function ProjectBacklogTab({
                     key={task.id}
                     task={task}
                     statuses={statuses}
+                    members={members}
+                    workspaceSlug={workspaceSlug}
+                    projectSlug={projectSlug}
                     canWrite={canWrite}
                     onOpen={() => setDetailTaskId(task.id)}
                     onStatusChange={(name) => handleStatusChange(task.id, name)}
+                    onAssigneesUpdated={load}
                   />
                 ))
               )}
@@ -271,15 +278,23 @@ export function ProjectBacklogTab({
 function TaskRow({
   task,
   statuses,
+  members,
+  workspaceSlug,
+  projectSlug,
   canWrite,
   onOpen,
   onStatusChange,
+  onAssigneesUpdated,
 }: {
   task: TaskSummary;
   statuses: TaskStatus[];
+  members: ProjectMember[];
+  workspaceSlug: string;
+  projectSlug: string;
   canWrite: boolean;
   onOpen: () => void;
   onStatusChange: (statusName: string) => void;
+  onAssigneesUpdated: () => void | Promise<void>;
 }) {
   return (
     <li className="flex flex-wrap items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50/80">
@@ -305,24 +320,25 @@ function TaskRow({
           </option>
         ))}
       </select>
-      <Equal
-        className="h-4 w-4"
-        strokeWidth={2.5}
-        style={{ color: priorityColor(task.priority) }}
-        aria-label={`Ưu tiên ${task.priority}`}
+      <TaskPriorityAssigneeRow
+        workspaceSlug={workspaceSlug}
+        projectSlug={projectSlug}
+        taskId={task.id}
+        assignees={task.assignees}
+        members={members}
+        canWrite={canWrite}
+        onUpdated={onAssigneesUpdated}
+        priority={
+          <TaskPriorityIcon
+            priority={task.priorityName}
+            colorCode={task.priorityColorCode}
+            size="sm"
+          />
+        }
       />
       {task.deadline && (
         <span className="text-xs text-slate-500">{formatDeadline(task.deadline)}</span>
       )}
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-slate-500">
-        {task.assignees.length > 0 ? (
-          <span className="text-[10px] font-semibold">
-            {task.assignees[0].username.slice(0, 2).toUpperCase()}
-          </span>
-        ) : (
-          <User className="h-4 w-4" />
-        )}
-      </span>
     </li>
   );
 }
