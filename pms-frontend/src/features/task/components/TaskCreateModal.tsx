@@ -6,7 +6,8 @@ import { inputClass } from "@/shared/components/ui/formStyles";
 import type { ProjectMember } from "@/features/project/types";
 import { taskApi } from "../api/taskApi";
 import type { TaskStatus } from "../types";
-import { PRIORITIES } from "../utils/taskUi";
+import { useTaskPriorities } from "../hooks/useTaskPriorities";
+import { TaskPriorityMenu } from "./TaskPriorityMenu";
 
 type Props = {
   workspaceSlug: string;
@@ -29,7 +30,8 @@ export function TaskCreateModal({
 }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("Medium");
+  const { defaultPriority } = useTaskPriorities();
+  const [priority, setPriority] = useState(defaultPriority);
   const [statusName, setStatusName] = useState(defaultStatusName);
   const [deadline, setDeadline] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<number[]>([]);
@@ -62,7 +64,7 @@ export function TaskCreateModal({
       onCreated();
       onClose();
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : "Không tạo được task");
+      setError(err instanceof ApiClientError ? err.message : "Không tạo được công việc");
     } finally {
       setSaving(false);
     }
@@ -108,23 +110,17 @@ export function TaskCreateModal({
               ))}
             </select>
           </label>
-          <label className="block text-sm font-medium text-slate-700">
-            Ưu tiên
-            <select
+          <div>
+            <span className="block text-sm font-medium text-slate-700">Ưu tiên</span>
+            <TaskPriorityMenu
               value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              className={inputClass}
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={setPriority}
+              className="mt-1"
+            />
+          </div>
         </div>
         <label className="block text-sm font-medium text-slate-700">
-          Deadline
+          Hạn hoàn thành
           <input
             type="date"
             value={deadline}
@@ -156,7 +152,7 @@ export function TaskCreateModal({
             Hủy
           </Button>
           <Button type="submit" disabled={saving || !title.trim()}>
-            {saving ? "Đang lưu…" : "Tạo task"}
+            {saving ? "Đang lưu…" : "Tạo công việc"}
           </Button>
         </div>
       </form>

@@ -1,6 +1,7 @@
 package com.example.pms.backend.project;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -78,6 +79,58 @@ class ProjectApiTest {
         mockMvc.perform(get("/api/workspaces/{ws}/projects/{slug}", workspaceSlug, projectSlug)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + authTestSupport.bearerTokenForUserId(1)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").exists());
+                .andExpect(jsonPath("$.code").exists())
+                .andExpect(jsonPath("$.canEditPriority").value(true));
+
+        mockMvc.perform(patch("/api/workspaces/{ws}/projects/{slug}", workspaceSlug, projectSlug)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + authTestSupport.bearerTokenForUserId(1))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"priorityName\":\"High\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.priorityName").value("High"))
+                .andExpect(jsonPath("$.priorityWeight").value(3));
+    }
+
+    @Test
+    void rejectProjectMemberNotInWorkspace() throws Exception {
+        String token = authTestSupport.bearerTokenForUserId(1);
+
+        MvcResult wsResult = mockMvc.perform(post("/api/workspaces")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "name", "Member Guard WS",
+                                "code", "MGW",
+                                "slug", "member-guard-ws"))))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        String workspaceSlug = objectMapper
+                .readTree(wsResult.getResponse().getContentAsString())
+                .get("slug")
+                .asText();
+
+        MvcResult projectResult = mockMvc.perform(post("/api/workspaces/{ws}/projects", workspaceSlug)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "name", "Guard Project",
+                                "statusName", "Active",
+                                "privacyMode", "PRIVATE"))))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        String projectSlug = objectMapper
+                .readTree(projectResult.getResponse().getContentAsString())
+                .get("slug")
+                .asText();
+
+        mockMvc.perform(post("/api/workspaces/{ws}/projects/{ps}/members", workspaceSlug, projectSlug)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "userId", 2,
+                                "roleName", "Member"))))
+                .andExpect(status().isForbidden());
     }
 }

@@ -16,6 +16,9 @@ public class ProjectResponse {
     String description;
     String statusName;
     String statusColorCode;
+    String priorityName;
+    String priorityColorCode;
+    Integer priorityWeight;
     String colorCode;
     String privacyMode;
     Instant startDate;
@@ -23,6 +26,8 @@ public class ProjectResponse {
     Long projectLeadUserId;
     String projectManagerUsername;
     String myRole;
+    boolean canManage;
+    boolean canEditPriority;
     Instant createdAt;
     Instant updatedAt;
 }

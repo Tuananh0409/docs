@@ -28,6 +28,10 @@ public class CreateProjectRequest {
     @Size(max = 50, message = "Trạng thái tối đa 50 ký tự")
     private String statusName;
 
+    /** Low | Medium | High | Urgent — mặc định Medium. */
+    @Size(max = 50, message = "Độ ưu tiên tối đa 50 ký tự")
+    private String priorityName;
+
     /** User id — Project Lead / PM (mặc định: người tạo). */
     private Long projectLeadUserId;
 

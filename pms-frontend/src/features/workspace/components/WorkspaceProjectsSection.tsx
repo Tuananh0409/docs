@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { FolderPlus, LayoutGrid } from "lucide-react";
 import { projectApi } from "@/features/project/api/projectApi";
 import { ProjectCard } from "@/features/project/components/ProjectCard";
+import { ProjectListControls } from "@/features/project/components/ProjectListControls";
 import type { ProjectSummary } from "@/features/project/types";
 import { ApiClientError } from "@/shared/api/client";
 import { EmptyState } from "@/shared/components/feedback/EmptyState";
@@ -13,6 +14,16 @@ import {
   type ProjectsChangedDetail,
 } from "@/shared/events/appEvents";
 import { createProjectPath } from "@/shared/routes/paths";
+import {
+  persistProjectListSort,
+  persistProjectPriorityFilter,
+  readProjectListSort,
+  readProjectPriorityFilter,
+} from "@/shared/utils/projectListPrefs";
+import {
+  applyProjectListView,
+  type ProjectListSort,
+} from "@/shared/utils/projectListUtils";
 
 type Props = {
   workspaceSlug: string;
@@ -28,6 +39,13 @@ export function WorkspaceProjectsSection({
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState(() => readProjectPriorityFilter());
+  const [projectSort, setProjectSort] = useState<ProjectListSort>(() => readProjectListSort());
+
+  const visibleProjects = useMemo(
+    () => applyProjectListView(projects, priorityFilter, projectSort),
+    [projects, priorityFilter, projectSort],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,7 +82,14 @@ export function WorkspaceProjectsSection({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <LayoutGrid className="h-5 w-5 text-slate-600" strokeWidth={2} />
-          <h2 className="text-lg font-semibold text-slate-900">Dự án</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Dự án</h2>
+            <p className="text-xs text-slate-500">
+              {priorityFilter
+                ? `Đang lọc: ${priorityFilter}`
+                : "Ưu tiên cao hiển thị trước (có thể đổi bên dưới)"}
+            </p>
+          </div>
         </div>
         {canCreate && (
           <Link
@@ -76,6 +101,19 @@ export function WorkspaceProjectsSection({
           </Link>
         )}
       </div>
+
+      <ProjectListControls
+        priorityFilter={priorityFilter}
+        sort={projectSort}
+        onPriorityFilterChange={(value) => {
+          setPriorityFilter(value);
+          persistProjectPriorityFilter(value);
+        }}
+        onSortChange={(value) => {
+          setProjectSort(value);
+          persistProjectListSort(value);
+        }}
+      />
 
       {error && <ErrorAlert message={error} className="mb-4" />}
       {loading && <LoadingState />}
@@ -94,9 +132,15 @@ export function WorkspaceProjectsSection({
           }
         />
       )}
-      {!loading && projects.length > 0 && (
+      {!loading &&
+        !error &&
+        projects.length > 0 &&
+        visibleProjects.length === 0 && (
+          <EmptyState message={`Không có dự án mức ${priorityFilter}.`} />
+        )}
+      {!loading && visibleProjects.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((p) => (
+          {visibleProjects.map((p) => (
             <ProjectCard key={p.id} project={p} workspaceSlug={workspaceSlug} />
           ))}
         </div>

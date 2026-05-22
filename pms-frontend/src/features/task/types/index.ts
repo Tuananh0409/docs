@@ -15,7 +15,9 @@ export type TaskSummary = {
   id: number;
   taskKey: string;
   title: string;
-  priority: string;
+  priorityName: string;
+  priorityColorCode: string | null;
+  priorityWeight: number | null;
   statusId: number | null;
   statusName: string | null;
   statusColorCode: string | null;
@@ -40,7 +42,9 @@ export type MyTask = {
   id: number;
   taskKey: string;
   title: string;
-  priority: string;
+  priorityName: string;
+  priorityColorCode: string | null;
+  priorityWeight: number | null;
   statusName: string | null;
   statusColorCode: string | null;
   deadline: string | null;

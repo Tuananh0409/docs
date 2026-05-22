@@ -14,6 +14,7 @@ import {
 import {
   PROJECT_COLOR_PRESETS,
   PROJECT_PRIVACY_OPTIONS,
+  PROJECT_PRIORITY_OPTIONS,
   PROJECT_STATUS_OPTIONS,
 } from "@/shared/config/project-options";
 import type { PendingFileMeta } from "@/shared/components/files/pendingFiles";
@@ -144,8 +145,25 @@ export function ProjectCreateForm({
             className={inputClass}
           >
             {PROJECT_STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField
+          label="Độ ưu tiên"
+          className="mt-5"
+          hint="Dự án High/Urgent hiển thị trước trong danh sách phòng ban."
+        >
+          <select
+            value={state.priorityName}
+            onChange={(e) => onStateChange({ priorityName: e.target.value })}
+            className={inputClass}
+          >
+            {PROJECT_PRIORITY_OPTIONS.map((p) => (
+              <option key={p.name} value={p.name}>
+                {p.name}
               </option>
             ))}
           </select>

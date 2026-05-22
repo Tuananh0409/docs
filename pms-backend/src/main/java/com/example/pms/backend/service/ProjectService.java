@@ -10,6 +10,7 @@ import com.example.pms.backend.dto.project.UpdateProjectRequest;
 import com.example.pms.backend.entity.Project;
 import com.example.pms.backend.entity.ProjectMember;
 import com.example.pms.backend.entity.ProjectRole;
+import com.example.pms.backend.entity.ProjectPriority;
 import com.example.pms.backend.entity.ProjectStatus;
 import com.example.pms.backend.entity.User;
 import com.example.pms.backend.entity.Workspace;
@@ -19,6 +20,7 @@ import com.example.pms.backend.exception.ErrorCode;
 import com.example.pms.backend.repository.ProjectMemberRepository;
 import com.example.pms.backend.repository.ProjectRepository;
 import com.example.pms.backend.repository.ProjectRoleRepository;
+import com.example.pms.backend.repository.ProjectPriorityRepository;
 import com.example.pms.backend.repository.ProjectStatusRepository;
 import com.example.pms.backend.repository.UserRepository;
 import com.example.pms.backend.repository.WorkspaceMemberRepository;
@@ -41,11 +43,13 @@ public class ProjectService {
     private static final String ROLE_PM = "PM";
     private static final String STATUS_ACTIVE = "Active";
     private static final String PRIVACY_PRIVATE = "PRIVATE";
+    private static final String DEFAULT_PRIORITY = "Medium";
 
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository projectMemberRepository;
     private final ProjectRoleRepository projectRoleRepository;
     private final ProjectStatusRepository projectStatusRepository;
+    private final ProjectPriorityRepository projectPriorityRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
@@ -69,7 +73,7 @@ public class ProjectService {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
         requireProjectAccess(project, currentUser.getId());
-        return toDetail(project, resolveMyProjectRole(project.getId(), currentUser.getId()));
+        return toDetail(project, currentUser.getId());
     }
 
     @Transactional
@@ -94,6 +98,7 @@ public class ProjectService {
         String code = resolveProjectCode(workspace.getCode(), name, request.getCode());
         String slug = resolveProjectSlug(workspace.getSlug(), name, request.getSlug());
         ProjectStatus status = resolveStatus(request.getStatusName());
+        ProjectPriority priority = resolvePriority(request.getPriorityName());
         User projectLead = resolveProjectLead(workspaceId, request.getProjectLeadUserId(), currentUser);
 
         Project project = Project.builder()
@@ -104,6 +109,7 @@ public class ProjectService {
                 .slug(slug)
                 .projectManager(projectLead)
                 .status(status)
+                .priority(priority)
                 .privacyMode(normalizePrivacy(request.getPrivacyMode()))
                 .colorCode(normalizeColor(request.getColorCode()))
                 .startDate(start)
@@ -117,14 +123,20 @@ public class ProjectService {
             projectMemberService.addMember(project, currentUser, "Member");
         }
 
-        return toDetail(project, resolveMyProjectRole(project.getId(), currentUser.getId()));
+        return toDetail(project, currentUser.getId());
     }
 
     @Transactional
     public ProjectResponse update(Long workspaceId, Long projectId, UpdateProjectRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        if (isPriorityOnlyUpdate(request)) {
+            requireProjectAccess(project, currentUser.getId());
+        } else if (isStatusOnlyUpdate(request) || isPrivacyOnlyUpdate(request)) {
+            requireProjectManage(project, currentUser.getId());
+        } else {
+            requireProjectManage(project, currentUser.getId());
+        }
 
         if (request.getName() != null && !request.getName().isBlank()) {
             String name = request.getName().trim();
@@ -159,6 +171,9 @@ public class ProjectService {
         if (request.getStatusName() != null && !request.getStatusName().isBlank()) {
             project.setStatus(resolveStatus(request.getStatusName()));
         }
+        if (request.getPriorityName() != null && !request.getPriorityName().isBlank()) {
+            project.setPriority(resolvePriority(request.getPriorityName()));
+        }
         if (request.getProjectLeadUserId() != null) {
             User newLead = resolveProjectLead(workspaceId, request.getProjectLeadUserId(), currentUser);
             project.setProjectManager(newLead);
@@ -166,7 +181,8 @@ public class ProjectService {
         }
 
         project = projectRepository.save(project);
-        return toDetail(project, resolveMyProjectRole(project.getId(), currentUser.getId()));
+        project = reloadProjectWithDetails(workspaceId, project.getId());
+        return toDetail(project, currentUser.getId());
     }
 
     @Transactional
@@ -196,7 +212,7 @@ public class ProjectService {
             Long workspaceId, Long projectId, AddProjectMemberRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        requireProjectMemberManage(project, currentUser.getId());
 
         User user = userRepository
                 .findById(request.getUserId())
@@ -214,7 +230,7 @@ public class ProjectService {
             UpdateProjectMemberRoleRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        requireProjectMemberManage(project, currentUser.getId());
 
         ProjectMember member = projectMemberRepository
                 .findByProjectIdAndUserId(projectId, userId)
@@ -240,7 +256,7 @@ public class ProjectService {
     public void removeMember(Long workspaceId, Long projectId, Long userId) {
         User currentUser = currentUserProvider.getCurrentUser();
         Project project = loadProject(workspaceId, projectId);
-        requireProjectManage(project, currentUser.getId());
+        requireProjectMemberManage(project, currentUser.getId());
 
         ProjectMember member = projectMemberRepository
                 .findByProjectIdAndUserId(projectId, userId)
@@ -255,8 +271,12 @@ public class ProjectService {
     }
 
     private Project loadProject(Long workspaceId, Long projectId) {
+        return reloadProjectWithDetails(workspaceId, projectId);
+    }
+
+    private Project reloadProjectWithDetails(Long workspaceId, Long projectId) {
         return projectRepository
-                .findByIdAndWorkspaceIdAndDeletedFalse(projectId, workspaceId)
+                .findByIdAndWorkspaceIdWithDetails(projectId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
     }
 
@@ -301,6 +321,18 @@ public class ProjectService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_FORBIDDEN));
     }
 
+    /** Thêm/sửa/xóa thành viên dự án: chỉ PM dự án hoặc Admin workspace. */
+    private void requireProjectMemberManage(Project project, Long userId) {
+        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
+            return;
+        }
+        projectMemberRepository
+                .findByProjectIdAndUserId(project.getId(), userId)
+                .filter(m -> ROLE_PM.equalsIgnoreCase(m.getRole().getRoleName()))
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.PROJECT_FORBIDDEN, "Chỉ PM dự án hoặc Admin workspace mới quản lý thành viên"));
+    }
+
     private boolean isWorkspaceAdmin(Long workspaceId, Long userId) {
         return workspaceMemberRepository
                 .findByWorkspaceIdAndUserId(workspaceId, userId)
@@ -313,6 +345,99 @@ public class ProjectService {
                 .findByProjectIdAndUserId(projectId, userId)
                 .map(m -> m.getRole().getRoleName())
                 .orElse(null);
+    }
+
+    private String resolveEffectiveMyRole(Project project, Long userId) {
+        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
+            return "Admin";
+        }
+        return resolveMyProjectRole(project.getId(), userId);
+    }
+
+    private boolean canManageProject(Project project, Long userId) {
+        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
+            return true;
+        }
+        return projectMemberRepository
+                .findByProjectIdAndUserId(project.getId(), userId)
+                .filter(m -> {
+                    String role = m.getRole().getRoleName();
+                    return ROLE_PM.equalsIgnoreCase(role) || "Lead".equalsIgnoreCase(role);
+                })
+                .isPresent();
+    }
+
+    private boolean canEditProjectPriority(Project project, Long userId) {
+        if (canManageProject(project, userId)) {
+            return true;
+        }
+        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
+            return true;
+        }
+        return projectMemberRepository
+                .findByProjectIdAndUserId(project.getId(), userId)
+                .isPresent();
+    }
+
+    private boolean isPriorityOnlyUpdate(UpdateProjectRequest request) {
+        if (request.getPriorityName() == null || request.getPriorityName().isBlank()) {
+            return false;
+        }
+        return isOnlyMetaFieldsSet(request, "priority");
+    }
+
+    private boolean isStatusOnlyUpdate(UpdateProjectRequest request) {
+        if (request.getStatusName() == null || request.getStatusName().isBlank()) {
+            return false;
+        }
+        return isOnlyMetaFieldsSet(request, "status");
+    }
+
+    private boolean isPrivacyOnlyUpdate(UpdateProjectRequest request) {
+        if (request.getPrivacyMode() == null || request.getPrivacyMode().isBlank()) {
+            return false;
+        }
+        return isOnlyMetaFieldsSet(request, "privacy");
+    }
+
+    private boolean isOnlyMetaFieldsSet(UpdateProjectRequest request, String field) {
+        boolean prioritySet =
+                request.getPriorityName() != null && !request.getPriorityName().isBlank();
+        boolean statusSet = request.getStatusName() != null && !request.getStatusName().isBlank();
+        boolean privacySet =
+                request.getPrivacyMode() != null && !request.getPrivacyMode().isBlank();
+        int metaCount = (prioritySet ? 1 : 0) + (statusSet ? 1 : 0) + (privacySet ? 1 : 0);
+        if (metaCount != 1) {
+            return false;
+        }
+        return switch (field) {
+            case "priority" -> prioritySet;
+            case "status" -> statusSet;
+            case "privacy" -> privacySet;
+            default -> false;
+        }
+                && request.getName() == null
+                && request.getDescription() == null
+                && request.getStartDate() == null
+                && request.getEndDate() == null
+                && request.getColorCode() == null
+                && request.getProjectLeadUserId() == null
+                && otherMetaFieldsUnset(request, field);
+    }
+
+    private boolean otherMetaFieldsUnset(UpdateProjectRequest request, String except) {
+        boolean prioritySet =
+                request.getPriorityName() != null && !request.getPriorityName().isBlank();
+        boolean statusSet = request.getStatusName() != null && !request.getStatusName().isBlank();
+        boolean privacySet =
+                request.getPrivacyMode() != null && !request.getPrivacyMode().isBlank();
+        if (!"priority".equals(except) && prioritySet) {
+            return false;
+        }
+        if (!"status".equals(except) && statusSet) {
+            return false;
+        }
+        return "privacy".equals(except) || !privacySet;
     }
 
     private User resolveProjectLead(Long workspaceId, Long requestedLeadUserId, User currentUser) {
@@ -347,6 +472,14 @@ public class ProjectService {
                 .findByStatusNameIgnoreCase(name)
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.VALIDATION_ERROR, "Trạng thái dự án không hợp lệ: " + name));
+    }
+
+    private ProjectPriority resolvePriority(String priorityName) {
+        String name = priorityName == null || priorityName.isBlank() ? DEFAULT_PRIORITY : priorityName.trim();
+        return projectPriorityRepository
+                .findByNameIgnoreCase(name)
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.VALIDATION_ERROR, "Độ ưu tiên dự án không hợp lệ: " + name));
     }
 
     private String resolveProjectCode(String workspaceCode, String projectName, String manualCode) {
@@ -417,10 +550,7 @@ public class ProjectService {
     }
 
     private ProjectSummaryResponse toSummary(Project project, Long userId) {
-        String myRole = resolveMyProjectRole(project.getId(), userId);
-        if (myRole == null && isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            myRole = "Admin";
-        }
+        String myRole = resolveEffectiveMyRole(project, userId);
         return ProjectSummaryResponse.builder()
                 .id(project.getId())
                 .name(project.getName())
@@ -428,17 +558,16 @@ public class ProjectService {
                 .slug(project.getSlug())
                 .colorCode(project.getColorCode())
                 .statusName(project.getStatus() != null ? project.getStatus().getStatusName() : null)
+                .priorityName(project.getPriority() != null ? project.getPriority().getName() : null)
+                .priorityColorCode(project.getPriority() != null ? project.getPriority().getColorCode() : null)
+                .priorityWeight(project.getPriority() != null ? project.getPriority().getWeight() : null)
                 .myRole(myRole)
                 .workspaceId(project.getWorkspace().getId())
                 .build();
     }
 
-    private ProjectResponse toDetail(Project project, String myRole) {
-        User currentUser = currentUserProvider.getCurrentUser();
-        String role = myRole;
-        if (role == null && isWorkspaceAdmin(project.getWorkspace().getId(), currentUser.getId())) {
-            role = "Admin";
-        }
+    private ProjectResponse toDetail(Project project, Long userId) {
+        String role = resolveEffectiveMyRole(project, userId);
         return ProjectResponse.builder()
                 .id(project.getId())
                 .workspaceId(project.getWorkspace().getId())
@@ -449,6 +578,9 @@ public class ProjectService {
                 .statusName(project.getStatus() != null ? project.getStatus().getStatusName() : null)
                 .statusColorCode(
                         project.getStatus() != null ? project.getStatus().getColorCode() : null)
+                .priorityName(project.getPriority() != null ? project.getPriority().getName() : null)
+                .priorityColorCode(project.getPriority() != null ? project.getPriority().getColorCode() : null)
+                .priorityWeight(project.getPriority() != null ? project.getPriority().getWeight() : null)
                 .colorCode(project.getColorCode())
                 .privacyMode(project.getPrivacyMode())
                 .startDate(project.getStartDate())
@@ -460,6 +592,8 @@ public class ProjectService {
                                 ? project.getProjectManager().getUsername()
                                 : null)
                 .myRole(role)
+                .canManage(canManageProject(project, userId))
+                .canEditPriority(canEditProjectPriority(project, userId))
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())
                 .build();

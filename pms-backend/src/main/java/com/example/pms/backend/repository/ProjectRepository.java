@@ -13,6 +13,17 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     Optional<Project> findByIdAndWorkspaceIdAndDeletedFalse(Long id, Long workspaceId);
 
+    @Query("""
+            SELECT p FROM Project p
+            LEFT JOIN FETCH p.priority
+            LEFT JOIN FETCH p.status
+            WHERE p.id = :id
+              AND p.workspace.id = :workspaceId
+              AND p.deleted = false
+            """)
+    Optional<Project> findByIdAndWorkspaceIdWithDetails(
+            @Param("id") Long id, @Param("workspaceId") Long workspaceId);
+
     Optional<Project> findBySlugIgnoreCaseAndWorkspaceIdAndDeletedFalse(String slug, Long workspaceId);
 
     boolean existsByWorkspaceIdAndNameIgnoreCaseAndDeletedFalse(Long workspaceId, String name);
@@ -24,6 +35,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query("""
             SELECT DISTINCT p FROM Project p
             LEFT JOIN FETCH p.status
+            LEFT JOIN FETCH p.priority
             WHERE p.workspace.id = :workspaceId
               AND p.deleted = false
               AND (
@@ -39,7 +51,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
                     AND LOWER(wr.roleName) = 'admin'
                 )
               )
-            ORDER BY p.name ASC
+            ORDER BY p.priority.weight DESC, p.name ASC
             """)
     List<Project> findVisibleByWorkspaceIdAndUserId(
             @Param("workspaceId") Long workspaceId, @Param("userId") Long userId);

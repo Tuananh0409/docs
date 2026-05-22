@@ -65,6 +65,10 @@ public class Project {
     @JoinColumn(name = "status_id")
     private ProjectStatus status;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "priority_id", nullable = false)
+    private ProjectPriority priority;
+
     @Column(name = "privacy_mode", nullable = false, length = 20)
     @Builder.Default
     private String privacyMode = "PRIVATE";

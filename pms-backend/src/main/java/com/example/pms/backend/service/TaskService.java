@@ -17,6 +17,7 @@ import com.example.pms.backend.entity.Task;
 import com.example.pms.backend.entity.TaskAssignee;
 import com.example.pms.backend.entity.TaskComment;
 import com.example.pms.backend.entity.TaskHistory;
+import com.example.pms.backend.entity.TaskPriority;
 import com.example.pms.backend.entity.TaskStatus;
 import com.example.pms.backend.entity.User;
 import com.example.pms.backend.exception.BusinessException;
@@ -26,6 +27,7 @@ import com.example.pms.backend.repository.ProjectMemberRepository;
 import com.example.pms.backend.repository.TaskAssigneeRepository;
 import com.example.pms.backend.repository.TaskCommentRepository;
 import com.example.pms.backend.repository.TaskHistoryRepository;
+import com.example.pms.backend.repository.TaskPriorityRepository;
 import com.example.pms.backend.repository.TaskRepository;
 import com.example.pms.backend.repository.TaskStatusRepository;
 import com.example.pms.backend.repository.UserRepository;
@@ -48,11 +50,10 @@ public class TaskService {
     private static final String DEFAULT_STATUS = "Todo";
     private static final String DEFAULT_PRIORITY = "Medium";
     private static final String STATUS_DONE = "Done";
-    private static final Set<String> ALLOWED_PRIORITIES =
-            Set.of("Urgent", "High", "Medium", "Low");
 
     private final TaskRepository taskRepository;
     private final TaskAssigneeRepository taskAssigneeRepository;
+    private final TaskPriorityRepository taskPriorityRepository;
     private final TaskStatusRepository taskStatusRepository;
     private final TaskCommentRepository taskCommentRepository;
     private final TaskHistoryRepository taskHistoryRepository;
@@ -106,7 +107,7 @@ public class TaskService {
                 .milestone(milestone)
                 .title(request.getTitle().trim())
                 .description(trimToNull(request.getDescription()))
-                .priority(normalizePriority(request.getPriority()))
+                .priority(resolvePriority(priorityInput(request.getPriorityName(), request.getPriority())))
                 .status(status)
                 .deadline(deadline)
                 .createdBy(currentUser)
@@ -142,10 +143,12 @@ public class TaskService {
                 task.setDescription(newDesc);
             }
         }
-        if (request.getPriority() != null && !request.getPriority().isBlank()) {
-            String newPriority = normalizePriority(request.getPriority());
-            if (!newPriority.equals(task.getPriority())) {
-                recordHistory(task, currentUser, "priority", task.getPriority(), newPriority);
+        String priorityInput = priorityInput(request.getPriorityName(), request.getPriority());
+        if (priorityInput != null && !priorityInput.isBlank()) {
+            TaskPriority newPriority = resolvePriority(priorityInput);
+            String oldName = task.getPriority() != null ? task.getPriority().getName() : null;
+            if (!newPriority.getName().equalsIgnoreCase(oldName != null ? oldName : "")) {
+                recordHistory(task, currentUser, "priority", oldName, newPriority.getName());
                 task.setPriority(newPriority);
             }
         }
@@ -378,17 +381,32 @@ public class TaskService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.TASK_STATUS_INVALID));
     }
 
-    private String normalizePriority(String priority) {
-        if (priority == null || priority.isBlank()) {
-            return DEFAULT_PRIORITY;
+    private String priorityInput(String priorityName, String priority) {
+        if (priorityName != null && !priorityName.isBlank()) {
+            return priorityName;
         }
-        for (String allowed : ALLOWED_PRIORITIES) {
-            if (allowed.equalsIgnoreCase(priority.trim())) {
-                return allowed;
-            }
-        }
-        throw new BusinessException(
-                ErrorCode.VALIDATION_ERROR, "Độ ưu tiên hợp lệ: Urgent, High, Medium, Low");
+        return priority;
+    }
+
+    private TaskPriority resolvePriority(String priorityName) {
+        String name =
+                priorityName == null || priorityName.isBlank()
+                        ? DEFAULT_PRIORITY
+                        : mapLegacyTaskPriority(priorityName.trim());
+        return taskPriorityRepository
+                .findByNameIgnoreCase(name)
+                .orElseThrow(() ->
+                        new BusinessException(
+                                ErrorCode.VALIDATION_ERROR,
+                                "Độ ưu tiên không hợp lệ: " + name));
+    }
+
+    private String mapLegacyTaskPriority(String raw) {
+        return switch (raw.toLowerCase()) {
+            case "urgent" -> "Highest";
+            case "medium" -> "Medium";
+            default -> raw;
+        };
     }
 
     private void validateDeadlineAgainstProject(Project project, Instant deadline) {
@@ -452,7 +470,9 @@ public class TaskService {
                 .id(task.getId())
                 .taskKey(taskKey(project, task))
                 .title(task.getTitle())
-                .priority(task.getPriority())
+                .priorityName(task.getPriority().getName())
+                .priorityColorCode(task.getPriority().getColorCode())
+                .priorityWeight(task.getPriority().getWeight())
                 .statusId(task.getStatus() != null ? task.getStatus().getId() : null)
                 .statusName(task.getStatus() != null ? task.getStatus().getStatusName() : null)
                 .statusColorCode(task.getStatus() != null ? task.getStatus().getColorCode() : null)
@@ -476,7 +496,9 @@ public class TaskService {
                 .taskKey(taskKey(project, task))
                 .title(task.getTitle())
                 .description(task.getDescription())
-                .priority(task.getPriority())
+                .priorityName(task.getPriority().getName())
+                .priorityColorCode(task.getPriority().getColorCode())
+                .priorityWeight(task.getPriority().getWeight())
                 .statusId(task.getStatus() != null ? task.getStatus().getId() : null)
                 .statusName(task.getStatus() != null ? task.getStatus().getStatusName() : null)
                 .statusColorCode(task.getStatus() != null ? task.getStatus().getColorCode() : null)
@@ -498,7 +520,9 @@ public class TaskService {
                 .id(task.getId())
                 .taskKey(taskKey(project, task))
                 .title(task.getTitle())
-                .priority(task.getPriority())
+                .priorityName(task.getPriority().getName())
+                .priorityColorCode(task.getPriority().getColorCode())
+                .priorityWeight(task.getPriority().getWeight())
                 .statusName(task.getStatus() != null ? task.getStatus().getStatusName() : null)
                 .statusColorCode(task.getStatus() != null ? task.getStatus().getColorCode() : null)
                 .deadline(task.getDeadline())

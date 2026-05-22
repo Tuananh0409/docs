@@ -14,7 +14,9 @@ public class TaskResponse {
     String taskKey;
     String title;
     String description;
-    String priority;
+    String priorityName;
+    String priorityColorCode;
+    Integer priorityWeight;
     Long statusId;
     String statusName;
     String statusColorCode;

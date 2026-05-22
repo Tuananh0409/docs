@@ -1,4 +1,5 @@
 import { Calendar, FolderKanban, Lock, Paperclip, User } from "lucide-react";
+import { ProjectPriorityBadge } from "@/features/project/components/ProjectPriorityBadge";
 import { PROJECT_PRIVACY_OPTIONS } from "@/shared/config/project-options";
 import type { Member } from "@/features/workspace/types";
 
@@ -7,6 +8,7 @@ export type ProjectCreatePreviewState = {
   description: string;
   themeColor: string;
   statusName: string;
+  priorityName: string;
   startDate: string;
   endDate: string;
   privacyMode: string;
@@ -63,6 +65,7 @@ export function ProjectCreatePreview({
             {state.description.trim() || "Mô tả sẽ hiển thị tại đây…"}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
+            <ProjectPriorityBadge name={state.priorityName} />
             <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
               {state.statusName}
             </span>

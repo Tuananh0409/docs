@@ -11,7 +11,9 @@ public class MyTaskResponse {
     Long id;
     String taskKey;
     String title;
-    String priority;
+    String priorityName;
+    String priorityColorCode;
+    Integer priorityWeight;
     String statusName;
     String statusColorCode;
     Instant deadline;

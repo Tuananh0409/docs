@@ -3,12 +3,21 @@ import type { TaskAssignee } from "../types";
 type Props = {
   assignees: TaskAssignee[];
   max?: number;
+  size?: "sm" | "md";
 };
 
-export function TaskAssigneeAvatars({ assignees, max = 3 }: Props) {
+const sizeClass = {
+  sm: "h-5 w-5 text-[9px] ring-1",
+  md: "h-7 w-7 text-[10px] ring-2",
+};
+
+export function TaskAssigneeAvatars({ assignees, max = 3, size = "md" }: Props) {
+  const dim = sizeClass[size];
   if (assignees.length === 0) {
     return (
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-[10px] text-slate-400">
+      <span
+        className={`flex items-center justify-center rounded-full bg-slate-100 text-slate-400 ${dim}`}
+      >
         —
       </span>
     );
@@ -23,7 +32,7 @@ export function TaskAssigneeAvatars({ assignees, max = 3 }: Props) {
         <span
           key={a.userId}
           title={a.username}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-800 ring-2 ring-white"
+          className={`flex items-center justify-center rounded-full bg-brand-100 font-semibold text-brand-800 ring-white ${dim}`}
         >
           {a.username
             .split(" ")
@@ -34,7 +43,9 @@ export function TaskAssigneeAvatars({ assignees, max = 3 }: Props) {
         </span>
       ))}
       {extra > 0 && (
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[10px] font-medium text-slate-600 ring-2 ring-white">
+        <span
+          className={`flex items-center justify-center rounded-full bg-slate-200 font-medium text-slate-600 ring-white ${dim}`}
+        >
           +{extra}
         </span>
       )}

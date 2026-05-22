@@ -1,17 +1,17 @@
 import { type FormEvent } from "react";
 import { Trash2, X } from "lucide-react";
 import type { Member } from "@/features/workspace/types";
-import {
-  PROJECT_COLOR_PRESETS,
-  PROJECT_PRIVACY_OPTIONS,
-  PROJECT_STATUS_OPTIONS,
-} from "@/shared/config/project-options";
+import { PROJECT_COLOR_PRESETS } from "@/shared/config/project-options";
 import { Button } from "@/shared/components/ui/Button";
+import { ProjectPrioritySelect } from "../ProjectPrioritySelect";
+import { ProjectPrivacySelect } from "../ProjectPrivacySelect";
+import { ProjectStatusSelect } from "../ProjectStatusSelect";
 
 type Props = {
   editName: string;
   editDescription: string;
   editStatus: string;
+  editPriority: string;
   editStart: string;
   editEnd: string;
   editColor: string;
@@ -23,6 +23,7 @@ type Props = {
   onChangeName: (v: string) => void;
   onChangeDescription: (v: string) => void;
   onChangeStatus: (v: string) => void;
+  onChangePriority: (v: string) => void;
   onChangeStart: (v: string) => void;
   onChangeEnd: (v: string) => void;
   onChangeColor: (v: string) => void;
@@ -37,6 +38,7 @@ export function ProjectSettingsPanel({
   editName,
   editDescription,
   editStatus,
+  editPriority,
   editStart,
   editEnd,
   editColor,
@@ -48,6 +50,7 @@ export function ProjectSettingsPanel({
   onChangeName,
   onChangeDescription,
   onChangeStatus,
+  onChangePriority,
   onChangeStart,
   onChangeEnd,
   onChangeColor,
@@ -119,17 +122,18 @@ export function ProjectSettingsPanel({
           </div>
           <label className="mt-4 block">
             <span className="text-sm font-medium text-slate-700">Trạng thái</span>
-            <select
-              value={editStatus}
-              onChange={(e) => onChangeStatus(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              {PROJECT_STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <ProjectStatusSelect value={editStatus} onChange={onChangeStatus} />
+            </div>
+          </label>
+          <label className="mt-4 block">
+            <span className="text-sm font-medium text-slate-700">Độ ưu tiên</span>
+            <div className="mt-1">
+              <ProjectPrioritySelect
+                value={editPriority}
+                onChange={onChangePriority}
+              />
+            </div>
           </label>
           <label className="mt-4 block">
             <span className="text-sm font-medium text-slate-700">Project Lead</span>
@@ -147,17 +151,9 @@ export function ProjectSettingsPanel({
           </label>
           <label className="mt-4 block">
             <span className="text-sm font-medium text-slate-700">Quyền riêng tư</span>
-            <select
-              value={editPrivacy}
-              onChange={(e) => onChangePrivacy(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              {PROJECT_PRIVACY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <ProjectPrivacySelect value={editPrivacy} onChange={onChangePrivacy} />
+            </div>
           </label>
           <p className="mt-4 text-xs text-slate-500">Màu dự án</p>
           <div className="mt-2 flex flex-wrap gap-2">

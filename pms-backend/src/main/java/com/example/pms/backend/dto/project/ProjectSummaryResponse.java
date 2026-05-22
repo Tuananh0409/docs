@@ -13,6 +13,9 @@ public class ProjectSummaryResponse {
     String slug;
     String colorCode;
     String statusName;
+    String priorityName;
+    String priorityColorCode;
+    Integer priorityWeight;
     String myRole;
     Long workspaceId;
 }
