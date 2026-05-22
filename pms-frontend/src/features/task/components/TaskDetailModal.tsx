@@ -430,6 +430,39 @@ export function TaskDetailModal({
                 </dd>
               </div>
               <div>
+                <dt className="text-slate-500">Người báo cáo</dt>
+                <dd className="mt-1">
+                  {canWrite ? (
+                    <select
+                      disabled={saving}
+                      value={task.reporterUserId}
+                      onChange={(e) => {
+                        const reporterUserId = Number(e.target.value);
+                        setTask({
+                          ...task,
+                          reporterUserId,
+                          reporterUsername:
+                            members.find((m) => m.userId === reporterUserId)?.username ??
+                            task.reporterUsername,
+                        });
+                        void persist({ reporterUserId }, false);
+                      }}
+                      className={inputClass}
+                    >
+                      {members.map((m) => (
+                        <option key={m.userId} value={m.userId}>
+                          {m.username}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="font-medium text-slate-800">
+                      {task.reporterUsername ?? "—"}
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-slate-500">Hạn hoàn thành</dt>
                 <dd className="mt-1">
                   <input

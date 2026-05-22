@@ -57,10 +57,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex) {
-        String message = "Dữ liệu trùng với bản ghi khác (tên, mã hoặc slug phòng ban)";
+        String message = "Dữ liệu trùng với bản ghi khác";
         String raw = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : "";
         if (raw != null) {
-            if (raw.contains("uq_workspaces_code")) {
+            if (raw.contains("uq_task_assignees_task_user")) {
+                message = "Người này đã được gán cho công việc";
+            } else if (raw.contains("uq_task_status_name")
+                    || raw.contains("uq_task_status_project_name")) {
+                message = "Tên cột trạng thái đã tồn tại trong dự án này";
+            } else if (raw.contains("uq_workspaces_code")) {
                 message = "Mã phòng ban đã tồn tại — hệ thống sẽ tự gợi ý mã khác khi bạn tạo lại";
             } else if (raw.contains("uq_workspaces_slug")) {
                 message = "Slug URL phòng ban đã tồn tại";

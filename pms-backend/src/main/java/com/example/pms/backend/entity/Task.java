@@ -58,9 +58,16 @@ public class Task {
 
     private Instant deadline;
 
+    @Column(name = "start_date")
+    private Instant startDate;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "reporter_id", nullable = false)
+    private User reporter;
 
     @Column(name = "is_deleted", nullable = false)
     @Builder.Default

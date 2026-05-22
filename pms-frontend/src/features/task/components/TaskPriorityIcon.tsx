@@ -18,6 +18,8 @@ type Props = {
   compactLabel?: boolean;
   colorCode?: string | null;
   options?: TaskPriorityOption[];
+  /** false = không dùng title (tránh tooltip trình duyệt chồng lên menu) */
+  showTitle?: boolean;
 };
 
 function IconSvg({ priority, px }: { priority: TaskPriorityName; px: number }) {
@@ -128,6 +130,7 @@ export function TaskPriorityIcon({
   compactLabel = false,
   colorCode,
   options,
+  showTitle = true,
 }: Props) {
   const px = SIZE_PX[size];
   const label = normalizeTaskPriority(priority, options);
@@ -137,7 +140,7 @@ export function TaskPriorityIcon({
     <span
       className={`inline-flex shrink-0 items-center gap-2 ${className}`}
       style={{ color }}
-      title={taskPriorityLabel(label)}
+      title={showTitle ? taskPriorityLabel(label) : undefined}
     >
       <IconSvg priority={label} px={px} />
       {showLabel && (

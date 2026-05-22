@@ -3,7 +3,6 @@ import {
   BarChart3,
   Flag,
   Home,
-  Kanban,
   ListChecks,
   Settings,
   Users,
@@ -47,13 +46,6 @@ export const MAIN_NAV: NavSection[] = [
   {
     title: "Công cụ",
     items: [
-      {
-        id: "board",
-        label: "Bảng Kanban",
-        path: "/board",
-        icon: <NavMenuIcon icon={Kanban} />,
-        badge: "Sắp có",
-      },
       {
         id: "milestones",
         label: "Milestone",

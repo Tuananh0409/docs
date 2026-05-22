@@ -54,6 +54,7 @@ public class ProjectService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final ProjectMemberService projectMemberService;
+    private final ProjectTaskStatusService projectTaskStatusService;
     private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
@@ -118,6 +119,7 @@ public class ProjectService {
                 .build();
 
         project = projectRepository.save(project);
+        projectTaskStatusService.seedDefaultColumns(project);
         projectMemberService.addMember(project, projectLead, ROLE_PM);
         if (!projectLead.getId().equals(currentUser.getId())) {
             projectMemberService.addMember(project, currentUser, "Member");

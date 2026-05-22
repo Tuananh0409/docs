@@ -1,7 +1,6 @@
 package com.example.pms.backend.dto.task;
 
 import jakarta.validation.constraints.Size;
-import java.time.LocalDate;
 import java.util.List;
 import lombok.Data;
 
@@ -25,10 +24,17 @@ public class UpdateTaskRequest {
 
     private Long milestoneId;
 
-    /** null = không đổi; để trống chuỗi rỗng qua PATCH riêng nếu cần — dùng Optional pattern: absent vs clear */
-    private LocalDate deadline;
+    /** null = không đổi. Chấp nhận `yyyy-MM-dd` hoặc ISO có giờ (timeline gửi cả hai). */
+    private String deadline;
 
     private Boolean clearDeadline;
 
+    /** null = không đổi. Chấp nhận `yyyy-MM-dd` hoặc ISO có giờ. */
+    private String startDate;
+
+    private Boolean clearStartDate;
+
     private List<Long> assigneeUserIds;
+
+    private Long reporterUserId;
 }

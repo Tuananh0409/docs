@@ -8,7 +8,6 @@ import com.example.pms.backend.dto.task.TaskAssigneeResponse;
 import com.example.pms.backend.dto.task.TaskCommentResponse;
 import com.example.pms.backend.dto.task.TaskHistoryResponse;
 import com.example.pms.backend.dto.task.TaskResponse;
-import com.example.pms.backend.dto.task.TaskStatusResponse;
 import com.example.pms.backend.dto.task.TaskSummaryResponse;
 import com.example.pms.backend.dto.task.UpdateTaskRequest;
 import com.example.pms.backend.entity.Milestone;
@@ -64,13 +63,6 @@ public class TaskService {
     private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
-    public List<TaskStatusResponse> listStatuses() {
-        return taskStatusRepository.findAllByOrderByPositionAsc().stream()
-                .map(this::toStatusResponse)
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
     public List<TaskSummaryResponse> listByProject(Long workspaceId, Long projectId) {
         Project project = projectAccessGuard.loadProject(workspaceId, projectId);
         User currentUser = currentUserProvider.getCurrentUser();
@@ -97,10 +89,13 @@ public class TaskService {
         User currentUser = currentUserProvider.getCurrentUser();
         projectAccessGuard.requireProjectWriteAccess(project, currentUser.getId());
 
-        TaskStatus status = resolveStatus(request.getStatusName());
+        TaskStatus status = resolveStatus(projectId, request.getStatusName());
         Milestone milestone = resolveMilestone(projectId, request.getMilestoneId());
+        Instant startDate = toInstantStart(request.getStartDate());
         Instant deadline = toInstantEnd(request.getDeadline());
-        validateDeadlineAgainstProject(project, deadline);
+        validateTaskDates(project, startDate, deadline);
+
+        User reporter = resolveReporter(project, request.getReporterUserId(), currentUser);
 
         Task task = Task.builder()
                 .project(project)
@@ -109,8 +104,10 @@ public class TaskService {
                 .description(trimToNull(request.getDescription()))
                 .priority(resolvePriority(priorityInput(request.getPriorityName(), request.getPriority())))
                 .status(status)
+                .startDate(startDate)
                 .deadline(deadline)
                 .createdBy(currentUser)
+                .reporter(reporter)
                 .deleted(false)
                 .build();
 
@@ -153,7 +150,7 @@ public class TaskService {
             }
         }
         if (request.getStatusName() != null && !request.getStatusName().isBlank()) {
-            TaskStatus newStatus = resolveStatus(request.getStatusName());
+            TaskStatus newStatus = resolveStatus(projectId, request.getStatusName());
             String oldName = task.getStatus() != null ? task.getStatus().getStatusName() : null;
             if (!newStatus.getStatusName().equalsIgnoreCase(oldName != null ? oldName : "")) {
                 recordHistory(task, currentUser, "status", oldName, newStatus.getStatusName());
@@ -173,14 +170,37 @@ public class TaskService {
                 task.setMilestone(milestone);
             }
         }
+        if (Boolean.TRUE.equals(request.getClearStartDate())) {
+            if (task.getStartDate() != null) {
+                recordHistory(
+                        task,
+                        currentUser,
+                        "startDate",
+                        task.getStartDate().toString(),
+                        null);
+                task.setStartDate(null);
+            }
+        } else if (parseRequestDate(request.getStartDate()) != null) {
+            Instant newStart = toInstantStart(parseRequestDate(request.getStartDate()));
+            validateTaskDates(project, newStart, task.getDeadline());
+            if (!java.util.Objects.equals(newStart, task.getStartDate())) {
+                recordHistory(
+                        task,
+                        currentUser,
+                        "startDate",
+                        task.getStartDate() != null ? task.getStartDate().toString() : null,
+                        newStart.toString());
+                task.setStartDate(newStart);
+            }
+        }
         if (Boolean.TRUE.equals(request.getClearDeadline())) {
             if (task.getDeadline() != null) {
                 recordHistory(task, currentUser, "deadline", String.valueOf(task.getDeadline()), null);
                 task.setDeadline(null);
             }
-        } else if (request.getDeadline() != null) {
-            Instant newDeadline = toInstantEnd(request.getDeadline());
-            validateDeadlineAgainstProject(project, newDeadline);
+        } else if (parseRequestDate(request.getDeadline()) != null) {
+            Instant newDeadline = toInstantEnd(parseRequestDate(request.getDeadline()));
+            validateTaskDates(project, task.getStartDate(), newDeadline);
             if (!java.util.Objects.equals(newDeadline, task.getDeadline())) {
                 recordHistory(
                         task,
@@ -191,8 +211,21 @@ public class TaskService {
                 task.setDeadline(newDeadline);
             }
         }
+        validateTaskDates(project, task.getStartDate(), task.getDeadline());
         if (request.getAssigneeUserIds() != null) {
             syncAssignees(project, task, request.getAssigneeUserIds(), currentUser);
+        }
+        if (request.getReporterUserId() != null) {
+            User newReporter = resolveReporter(project, request.getReporterUserId(), currentUser);
+            if (!newReporter.getId().equals(task.getReporter().getId())) {
+                recordHistory(
+                        task,
+                        currentUser,
+                        "reporter",
+                        task.getReporter().getUsername(),
+                        newReporter.getUsername());
+                task.setReporter(newReporter);
+            }
         }
 
         task = taskRepository.save(task);
@@ -329,6 +362,17 @@ public class TaskService {
         }
     }
 
+    private User resolveReporter(Project project, Long reporterUserId, User fallback) {
+        if (reporterUserId == null) {
+            return fallback;
+        }
+        User reporter = userRepository
+                .findById(reporterUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        ensureProjectMemberOrAdmin(project, reporter.getId());
+        return reporter;
+    }
+
     private void syncAssignees(
             Project project, Task task, List<Long> assigneeUserIds, User actor) {
         if (assigneeUserIds == null) {
@@ -336,6 +380,9 @@ public class TaskService {
         }
         Set<Long> unique = new HashSet<>(assigneeUserIds);
         taskAssigneeRepository.deleteByTaskId(task.getId());
+        // Flush deletes before re-insert; otherwise uq_task_assignees_task_user fires
+        // when keeping an existing assignee and adding another.
+        taskAssigneeRepository.flush();
 
         for (Long userId : unique) {
             User assignee = userRepository
@@ -374,10 +421,10 @@ public class TaskService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.MILESTONE_NOT_FOUND));
     }
 
-    private TaskStatus resolveStatus(String statusName) {
+    private TaskStatus resolveStatus(Long projectId, String statusName) {
         String name = statusName == null || statusName.isBlank() ? DEFAULT_STATUS : statusName.trim();
         return taskStatusRepository
-                .findByStatusNameIgnoreCase(name)
+                .findByProjectIdAndStatusNameIgnoreCase(projectId, name)
                 .orElseThrow(() -> new BusinessException(ErrorCode.TASK_STATUS_INVALID));
     }
 
@@ -409,7 +456,18 @@ public class TaskService {
         };
     }
 
-    private void validateDeadlineAgainstProject(Project project, Instant deadline) {
+    private void validateTaskDates(Project project, Instant startDate, Instant deadline) {
+        if (startDate != null && deadline != null && startDate.isAfter(deadline)) {
+            throw new BusinessException(
+                    ErrorCode.VALIDATION_ERROR, "Ngày bắt đầu không được sau hạn chót");
+        }
+        if (startDate != null
+                && project.getStartDate() != null
+                && startDate.isBefore(project.getStartDate())) {
+            throw new BusinessException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Ngày bắt đầu task không được trước ngày bắt đầu dự án");
+        }
         if (deadline == null) {
             return;
         }
@@ -417,6 +475,22 @@ public class TaskService {
             throw new BusinessException(
                     ErrorCode.VALIDATION_ERROR, "Deadline task không được sau ngày kết thúc dự án");
         }
+    }
+
+    /** Parse `yyyy-MM-dd` hoặc ISO datetime (lấy 10 ký tự đầu). */
+    private LocalDate parseRequestDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String part = raw.trim();
+        if (part.length() >= 10) {
+            part = part.substring(0, 10);
+        }
+        return LocalDate.parse(part);
+    }
+
+    private Instant toInstantStart(LocalDate date) {
+        return date == null ? null : date.atStartOfDay().toInstant(ZoneOffset.UTC);
     }
 
     private Instant toInstantEnd(LocalDate date) {
@@ -477,11 +551,14 @@ public class TaskService {
                 .statusName(task.getStatus() != null ? task.getStatus().getStatusName() : null)
                 .statusColorCode(task.getStatus() != null ? task.getStatus().getColorCode() : null)
                 .deadline(task.getDeadline())
+                .startDate(task.getStartDate())
                 .overdue(isOverdue(task))
                 .milestoneId(task.getMilestone() != null ? task.getMilestone().getId() : null)
                 .milestoneName(task.getMilestone() != null ? task.getMilestone().getName() : null)
                 .createdByUserId(task.getCreatedBy().getId())
                 .createdByUsername(task.getCreatedBy().getUsername())
+                .reporterUserId(task.getReporter().getId())
+                .reporterUsername(task.getReporter().getUsername())
                 .assignees(loadAssignees(task.getId()))
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
@@ -503,11 +580,14 @@ public class TaskService {
                 .statusName(task.getStatus() != null ? task.getStatus().getStatusName() : null)
                 .statusColorCode(task.getStatus() != null ? task.getStatus().getColorCode() : null)
                 .deadline(task.getDeadline())
+                .startDate(task.getStartDate())
                 .overdue(isOverdue(task))
                 .milestoneId(task.getMilestone() != null ? task.getMilestone().getId() : null)
                 .milestoneName(task.getMilestone() != null ? task.getMilestone().getName() : null)
                 .createdByUserId(task.getCreatedBy().getId())
                 .createdByUsername(task.getCreatedBy().getUsername())
+                .reporterUserId(task.getReporter().getId())
+                .reporterUsername(task.getReporter().getUsername())
                 .assignees(loadAssignees(task.getId()))
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
@@ -536,15 +616,6 @@ public class TaskService {
                 .projectCode(project.getCode())
                 .assignees(loadAssignees(task.getId()))
                 .updatedAt(task.getUpdatedAt())
-                .build();
-    }
-
-    private TaskStatusResponse toStatusResponse(TaskStatus status) {
-        return TaskStatusResponse.builder()
-                .id(status.getId())
-                .statusName(status.getStatusName())
-                .position(status.getPosition())
-                .colorCode(status.getColorCode())
                 .build();
     }
 

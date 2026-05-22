@@ -17,8 +17,59 @@ function taskBase(workspaceSlug: string, projectSlug: string, taskId?: number) {
   return taskId != null ? `${base}/${taskId}` : base;
 }
 
+export type CreateTaskStatusPayload = {
+  statusName: string;
+  colorCode?: string;
+};
+
 export const taskApi = {
-  listStatuses: () => apiFetch<TaskStatus[]>("/api/task-statuses"),
+  listStatuses: (workspaceSlug: string, projectSlug: string) =>
+    apiFetch<TaskStatus[]>(
+      `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(projectSlug)}/task-statuses`,
+    ),
+
+  createStatus: (
+    workspaceSlug: string,
+    projectSlug: string,
+    body: CreateTaskStatusPayload,
+  ) =>
+    apiFetch<TaskStatus>(
+      `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(projectSlug)}/task-statuses`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
+
+  reorderStatuses: (
+    workspaceSlug: string,
+    projectSlug: string,
+    orderedStatusIds: number[],
+  ) =>
+    apiFetch<TaskStatus[]>(
+      `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(projectSlug)}/task-statuses/reorder`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ orderedStatusIds }),
+      },
+    ),
+
+  deleteStatus: (
+    workspaceSlug: string,
+    projectSlug: string,
+    statusId: number,
+    moveToStatusId?: number,
+  ) =>
+    apiFetch<void>(
+      `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(projectSlug)}/task-statuses/${statusId}`,
+      {
+        method: "DELETE",
+        body:
+          moveToStatusId != null
+            ? JSON.stringify({ moveToStatusId })
+            : undefined,
+      },
+    ),
 
   listByProject: (workspaceSlug: string, projectSlug: string) =>
     apiFetch<TaskSummary[]>(taskBase(workspaceSlug, projectSlug)),

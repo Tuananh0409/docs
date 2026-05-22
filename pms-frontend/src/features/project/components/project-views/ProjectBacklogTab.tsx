@@ -59,7 +59,7 @@ export function ProjectBacklogTab({
     try {
       const [taskList, statusList] = await Promise.all([
         taskApi.listByProject(workspaceSlug, projectSlug),
-        taskApi.listStatuses(),
+        taskApi.listStatuses(workspaceSlug, projectSlug),
       ]);
       setTasks(taskList);
       setStatuses(statusList);

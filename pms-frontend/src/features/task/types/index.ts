@@ -22,11 +22,14 @@ export type TaskSummary = {
   statusName: string | null;
   statusColorCode: string | null;
   deadline: string | null;
+  startDate: string | null;
   overdue: boolean;
   milestoneId: number | null;
   milestoneName: string | null;
   createdByUserId: number;
   createdByUsername: string;
+  reporterUserId: number;
+  reporterUsername: string;
   assignees: TaskAssignee[];
   createdAt: string;
   updatedAt: string;
@@ -104,7 +107,9 @@ export type CreateTaskPayload = {
   statusName?: string;
   milestoneId?: number;
   deadline?: string;
+  startDate?: string;
   assigneeUserIds?: number[];
+  reporterUserId?: number;
 };
 
 export type UpdateTaskPayload = {
@@ -115,5 +120,8 @@ export type UpdateTaskPayload = {
   milestoneId?: number;
   deadline?: string;
   clearDeadline?: boolean;
+  startDate?: string;
+  clearStartDate?: boolean;
   assigneeUserIds?: number[];
+  reporterUserId?: number;
 };

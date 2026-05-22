@@ -3,7 +3,6 @@ import { AuthLayout } from "@/features/auth/components/AuthLayout";
 import { LoginPage } from "@/features/auth/pages/LoginPage";
 import { RegisterPage } from "@/features/auth/pages/RegisterPage";
 import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
-import { BoardPage } from "@/features/project/pages/BoardPage";
 import { MilestonesPage } from "@/features/project/pages/MilestonesPage";
 import { CreateProjectPage } from "@/features/project/pages/CreateProjectPage";
 import { ProjectDetailPage } from "@/features/project/pages/ProjectDetailPage";
@@ -40,7 +39,6 @@ export function AppRouter() {
           />
           <Route path="my-tasks" element={<MyTasksPage />} />
           <Route path="projects" element={<ProjectsPage />} />
-          <Route path="board" element={<BoardPage />} />
           <Route path="milestones" element={<MilestonesPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="members" element={<MembersPage />} />

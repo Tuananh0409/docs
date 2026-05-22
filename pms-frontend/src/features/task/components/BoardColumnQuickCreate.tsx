@@ -96,9 +96,9 @@ export function BoardColumnQuickCreate({
         type="button"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-1 rounded px-1 py-1 text-xs font-medium text-slate-500 hover:bg-slate-200/60 disabled:opacity-50"
+        className="flex w-full items-center gap-1 rounded px-1 py-1 text-sm font-medium text-slate-500 hover:bg-slate-200/60 disabled:opacity-50"
       >
-        <Plus className="h-3 w-3" />
+        <Plus className="h-3.5 w-3.5" />
         Tạo
       </button>
     );
@@ -107,7 +107,7 @@ export function BoardColumnQuickCreate({
   return (
     <div
       ref={rootRef}
-      className="relative rounded border-2 border-brand-500 bg-white p-1.5 shadow-sm"
+      className="relative rounded border-2 border-brand-500 bg-white p-2 shadow-sm"
     >
       <input
         ref={inputRef}
@@ -122,7 +122,7 @@ export function BoardColumnQuickCreate({
           if (e.key === "Escape") close();
         }}
         placeholder="Việc cần làm là gì?"
-        className="w-full border-0 bg-transparent text-xs text-slate-900 outline-none placeholder:text-slate-400"
+        className="w-full border-0 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
         aria-label={`Tạo task trong ${statusName}`}
       />
 
@@ -212,23 +212,23 @@ export function BoardColumnQuickCreate({
             </button>
             {showAssignee && (
               <div className="absolute bottom-full left-0 z-20 mb-1 w-44 rounded-md border border-slate-200 bg-white shadow-lg">
-                <p className="border-b border-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                <p className="border-b border-slate-100 px-2 py-1 text-xs font-medium text-slate-500">
                   Người thực hiện
                 </p>
                 <ul className="max-h-32 overflow-y-auto py-0.5">
                   {members.length === 0 ? (
-                    <li className="px-2 py-1.5 text-[10px] text-slate-400">Chưa có thành viên</li>
+                    <li className="px-2 py-1.5 text-xs text-slate-400">Chưa có thành viên</li>
                   ) : (
                     members.map((m) => (
                       <li key={m.userId}>
                         <label className="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-slate-50">
                           <input
                             type="checkbox"
-                            className="h-3 w-3 rounded border-slate-300"
+                            className="h-3.5 w-3.5 rounded border-slate-300"
                             checked={assigneeIds.includes(m.userId)}
                             onChange={() => toggleAssignee(m.userId)}
                           />
-                          <span className="truncate text-xs text-slate-700">{m.username}</span>
+                          <span className="truncate text-sm text-slate-700">{m.username}</span>
                         </label>
                       </li>
                     ))

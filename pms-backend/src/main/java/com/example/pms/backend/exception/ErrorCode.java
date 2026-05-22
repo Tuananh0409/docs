@@ -44,6 +44,9 @@ public enum ErrorCode {
     TASK_NOT_FOUND("ERR_TK_01", "Công việc không tồn tại", HttpStatus.NOT_FOUND),
     TASK_FORBIDDEN("ERR_TK_02", "Bạn không có quyền thao tác trên công việc này", HttpStatus.FORBIDDEN),
     TASK_STATUS_INVALID("ERR_TK_07", "Trạng thái công việc không hợp lệ", HttpStatus.BAD_REQUEST),
+    TASK_STATUS_EXISTS("ERR_TK_09", "Tên cột trạng thái đã tồn tại", HttpStatus.CONFLICT),
+    TASK_STATUS_LAST_COLUMN(
+            "ERR_TK_10", "Dự án phải có ít nhất một cột trên bảng", HttpStatus.CONFLICT),
     TASK_COMMENT_NOT_FOUND("ERR_TK_08", "Bình luận không tồn tại", HttpStatus.NOT_FOUND),
     MILESTONE_NOT_FOUND("ERR_MS_03", "Milestone không tồn tại", HttpStatus.NOT_FOUND),
     VALIDATION_ERROR("ERR_VALIDATION", "Dữ liệu không hợp lệ", HttpStatus.BAD_REQUEST);

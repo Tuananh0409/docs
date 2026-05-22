@@ -21,11 +21,14 @@ public class TaskResponse {
     String statusName;
     String statusColorCode;
     Instant deadline;
+    Instant startDate;
     boolean overdue;
     Long milestoneId;
     String milestoneName;
     Long createdByUserId;
     String createdByUsername;
+    Long reporterUserId;
+    String reporterUsername;
     List<TaskAssigneeResponse> assignees;
     Instant createdAt;
     Instant updatedAt;

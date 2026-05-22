@@ -18,6 +18,9 @@ import { ProjectTabNav } from "../components/project-shell/ProjectTabNav";
 import { ProjectViewToolbar } from "../components/project-shell/ProjectViewToolbar";
 import { ProjectBacklogTab } from "../components/project-views/ProjectBacklogTab";
 import { ProjectBoardTab } from "../components/project-views/ProjectBoardTab";
+import { ProjectCalendarTab } from "../components/project-views/ProjectCalendarTab";
+import { ProjectTimelineTab } from "../components/project-views/ProjectTimelineTab";
+import { ProjectListTab } from "../components/project-views/ProjectListTab";
 import { ProjectSettingsPanel } from "../components/project-views/ProjectSettingsPanel";
 import { ProjectSummaryTab } from "../components/project-views/ProjectSummaryTab";
 import { projectApi } from "../api/projectApi";
@@ -267,7 +270,8 @@ export function ProjectDetailPage() {
   const writeTasks = canWriteTasks(project.myRole);
   const isWsAdmin = project.myRole?.toLowerCase() === "admin";
   const isProjectMember = project.myRole != null || isWsAdmin;
-  const showWorkToolbar = activeTab === "backlog" || activeTab === "board";
+  const showWorkToolbar =
+    activeTab === "backlog" || activeTab === "board" || activeTab === "list";
   const bumpTasks = () => setTaskRefreshKey((k) => k + 1);
 
   return (
@@ -297,6 +301,11 @@ export function ProjectDetailPage() {
           members={members}
           searchQuery={taskSearch}
           onSearchChange={setTaskSearch}
+          placeholder={
+            activeTab === "list"
+              ? "Tìm công việc…"
+              : undefined
+          }
         />
       )}
 
@@ -317,6 +326,43 @@ export function ProjectDetailPage() {
             onStatusChange={manage ? handleStatusChange : undefined}
             onPrivacyChange={manage ? handlePrivacyChange : undefined}
             metaSaving={metaSaving}
+          />
+        )}
+        {activeTab === "list" && workspaceSlug && projectSlug && (
+          <ProjectListTab
+            workspaceSlug={workspaceSlug}
+            projectSlug={projectSlug}
+            members={members}
+            canWrite={writeTasks}
+            canDelete={manage}
+            searchQuery={taskSearch}
+            refreshKey={taskRefreshKey}
+            onTasksChanged={bumpTasks}
+          />
+        )}
+        {activeTab === "calendar" && workspaceSlug && projectSlug && (
+          <ProjectCalendarTab
+            workspaceSlug={workspaceSlug}
+            projectSlug={projectSlug}
+            members={members}
+            canWrite={writeTasks}
+            canDelete={manage}
+            refreshKey={taskRefreshKey}
+            onTasksChanged={bumpTasks}
+          />
+        )}
+        {activeTab === "timeline" && workspaceSlug && projectSlug && (
+          <ProjectTimelineTab
+            project={project}
+            workspaceSlug={workspaceSlug}
+            projectSlug={projectSlug}
+            members={members}
+            canWrite={writeTasks}
+            canDelete={manage}
+            searchQuery={taskSearch}
+            onSearchChange={setTaskSearch}
+            refreshKey={taskRefreshKey}
+            onTasksChanged={bumpTasks}
           />
         )}
         {activeTab === "board" && workspaceSlug && projectSlug && (
