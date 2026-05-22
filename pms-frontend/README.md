@@ -28,7 +28,7 @@ Mở http://localhost:5173
 - **Workspace** (`/workspaces`) — danh sách / tạo workspace
 - Chi tiết workspace (`/workspaces/:id`), mời thành viên
 - Chấp nhận lời mời: `/invitations/{token}/accept`
-- Sidebar: các mục **Dự án, Kanban, …** hiện là placeholder **Sắp có** (chờ API)
+- **Task** — CRUD trong dự án (Backlog/Board), gán người, trạng thái, comment, file đính kèm; **Công việc của tôi** (`/my-tasks`)
 
 ## Giao diện & icon
 

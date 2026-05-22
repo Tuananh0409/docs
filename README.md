@@ -105,6 +105,22 @@ Cấu hình JWT (`application.properties`): `app.jwt.secret`, `app.jwt.access-to
 
 ---
 
+## API Task (trong project)
+
+| Method | Path | Mô tả |
+|--------|------|--------|
+| GET | `/api/task-statuses` | Danh sách trạng thái (Todo, In Progress, …) |
+| GET | `/api/tasks/mine` | Task được gán cho user hiện tại |
+| GET | `/api/tasks/mine/summary` | Thống kê task của tôi |
+| GET/POST | `/api/workspaces/{ws}/projects/{ps}/tasks` | Danh sách / tạo task |
+| GET/PATCH/DELETE | `.../tasks/{id}` | Chi tiết / sửa / xóa mềm |
+| PATCH | `.../tasks/{id}/status` | Đổi trạng thái (Kanban) |
+| GET/POST | `.../tasks/{id}/comments` | Bình luận |
+| GET | `.../tasks/{id}/history` | Lịch sử thay đổi |
+| GET/POST | `.../tasks/{id}/attachments` | File đính kèm task |
+
+---
+
 ## Cấu hình tùy chọn
 
 Copy file mẫu nếu DB khác mặc định:

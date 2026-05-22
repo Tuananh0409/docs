@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Calendar } from "lucide-react";
+import { taskApi } from "@/features/task/api/taskApi";
 import type { ProjectDetail, ProjectMember } from "../../types";
 import { Badge } from "@/shared/components/ui/Badge";
 import { getPrivacyModeLabel } from "@/shared/config/workspace-options";
@@ -25,6 +27,25 @@ export function ProjectSummaryTab({
   canUpload,
 }: Props) {
   const theme = project.colorCode ?? "#2563eb";
+  const [taskTotal, setTaskTotal] = useState(0);
+  const [taskDone, setTaskDone] = useState(0);
+
+  useEffect(() => {
+    taskApi
+      .listByProject(workspaceSlug, projectSlug)
+      .then((list) => {
+        setTaskTotal(list.length);
+        setTaskDone(
+          list.filter((t) => t.statusName?.toLowerCase() === "done").length,
+        );
+      })
+      .catch(() => {
+        setTaskTotal(0);
+        setTaskDone(0);
+      });
+  }, [workspaceSlug, projectSlug]);
+
+  const progress = taskTotal > 0 ? Math.round((taskDone / taskTotal) * 100) : 0;
 
   return (
     <div className="flex-1 bg-[#f6f7f9] p-6">
@@ -46,6 +67,20 @@ export function ProjectSummaryTab({
               <Calendar className="h-4 w-4" />
               {formatDate(project.startDate)} → {formatDate(project.endDate)}
             </p>
+            <div className="mt-4">
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>Tiến độ task</span>
+                <span>
+                  {taskDone}/{taskTotal} ({progress}%)
+                </span>
+              </div>
+              <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-brand-500 transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
 

@@ -40,7 +40,7 @@ export const MAIN_NAV: NavSection[] = [
         label: "Công việc của tôi",
         path: "/my-tasks",
         icon: <NavMenuIcon icon={ListChecks} />,
-        badge: "Sắp có",
+        live: true,
       },
     ],
   },

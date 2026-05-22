@@ -30,6 +30,11 @@ function canManageProject(role: string | null | undefined) {
   return r === "pm" || r === "lead" || r === "admin";
 }
 
+function canWriteTasks(role: string | null | undefined) {
+  const r = role?.toLowerCase();
+  return r === "pm" || r === "lead" || r === "admin" || r === "member";
+}
+
 export function ProjectDetailPage() {
   const { workspaceSlug, projectSlug } = useParams<{
     workspaceSlug: string;
@@ -48,6 +53,8 @@ export function ProjectDetailPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [taskSearch, setTaskSearch] = useState("");
+  const [taskRefreshKey, setTaskRefreshKey] = useState(0);
 
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -157,9 +164,11 @@ export function ProjectDetailPage() {
   if (!project || !workspaceSlug || !projectSlug) return null;
 
   const manage = canManageProject(project.myRole);
+  const writeTasks = canWriteTasks(project.myRole);
   const isWsAdmin = project.myRole?.toLowerCase() === "admin";
   const isProjectMember = project.myRole != null || isWsAdmin;
   const showWorkToolbar = activeTab === "backlog" || activeTab === "board";
+  const bumpTasks = () => setTaskRefreshKey((k) => k + 1);
 
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] flex-col bg-white">
@@ -179,7 +188,13 @@ export function ProjectDetailPage() {
         </div>
       )}
 
-      {showWorkToolbar && <ProjectViewToolbar members={members} />}
+      {showWorkToolbar && (
+        <ProjectViewToolbar
+          members={members}
+          searchQuery={taskSearch}
+          onSearchChange={setTaskSearch}
+        />
+      )}
 
       <div className="flex flex-1 flex-col">
         {activeTab === "summary" && (
@@ -191,8 +206,31 @@ export function ProjectDetailPage() {
             canUpload={isProjectMember}
           />
         )}
-        {activeTab === "board" && <ProjectBoardTab />}
-        {activeTab === "backlog" && <ProjectBacklogTab project={project} />}
+        {activeTab === "board" && workspaceSlug && projectSlug && (
+          <ProjectBoardTab
+            workspaceSlug={workspaceSlug}
+            projectSlug={projectSlug}
+            members={members}
+            canWrite={writeTasks}
+            canDelete={manage}
+            searchQuery={taskSearch}
+            refreshKey={taskRefreshKey}
+            onTasksChanged={bumpTasks}
+          />
+        )}
+        {activeTab === "backlog" && workspaceSlug && projectSlug && (
+          <ProjectBacklogTab
+            workspaceSlug={workspaceSlug}
+            projectSlug={projectSlug}
+            project={project}
+            members={members}
+            canWrite={writeTasks}
+            canDelete={manage}
+            searchQuery={taskSearch}
+            refreshKey={taskRefreshKey}
+            onTasksChanged={bumpTasks}
+          />
+        )}
       </div>
 
       {showSettings && manage && (

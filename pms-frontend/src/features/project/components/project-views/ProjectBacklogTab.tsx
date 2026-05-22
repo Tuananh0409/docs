@@ -1,39 +1,122 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
   Equal,
   GripHorizontal,
   Plus,
-  Sparkles,
   User,
-  X,
 } from "lucide-react";
-import type { ProjectDetail } from "../../types";
+import type { ProjectDetail, ProjectMember } from "../../types";
+import { taskApi } from "@/features/task/api/taskApi";
+import { TaskCreateModal } from "@/features/task/components/TaskCreateModal";
+import { TaskDetailModal } from "@/features/task/components/TaskDetailModal";
+import type { TaskStatus, TaskSummary } from "@/features/task/types";
+import {
+  countByStatus,
+  filterTasksByQuery,
+  formatDeadline,
+  priorityColor,
+} from "@/features/task/utils/taskUi";
+import { ApiClientError } from "@/shared/api/client";
+import { ErrorAlert } from "@/shared/components/feedback/ErrorAlert";
+import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { StatusCountPills } from "../project-shell/StatusCountPills";
 
-/** Demo UI — thay bằng API Task khi có module S3 */
-const DEMO_BACKLOG = [
-  { id: 1, key: "7", title: "xây dựng csdl", label: "THIẾT KẾ BE" },
-  { id: 2, key: "8", title: "tìm hiểu công nghệ", label: "THIẾT KẾ BE" },
-  { id: 3, key: "9", title: "xác định các mqh của thực thể", label: "THIẾT KẾ BE" },
-];
-
 type Props = {
+  workspaceSlug: string;
+  projectSlug: string;
   project: ProjectDetail;
+  members: ProjectMember[];
+  canWrite: boolean;
+  canDelete: boolean;
+  searchQuery: string;
+  refreshKey: number;
+  onTasksChanged: () => void;
 };
 
-export function ProjectBacklogTab({ project }: Props) {
+export function ProjectBacklogTab({
+  workspaceSlug,
+  projectSlug,
+  members,
+  canWrite,
+  canDelete,
+  searchQuery,
+  refreshKey,
+  onTasksChanged,
+}: Props) {
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [boardOpen, setBoardOpen] = useState(true);
   const [backlogOpen, setBacklogOpen] = useState(true);
-  const [showBanner, setShowBanner] = useState(true);
-  const prefix = project.code;
+  const [showCreate, setShowCreate] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<number | null>(null);
 
-  const backlogCount = DEMO_BACKLOG.length;
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [taskList, statusList] = await Promise.all([
+        taskApi.listByProject(workspaceSlug, projectSlug),
+        taskApi.listStatuses(),
+      ]);
+      setTasks(taskList);
+      setStatuses(statusList);
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : "Không tải được task");
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceSlug, projectSlug]);
+
+  useEffect(() => {
+    load();
+  }, [load, refreshKey]);
+
+  const filtered = useMemo(
+    () => filterTasksByQuery(tasks, searchQuery),
+    [tasks, searchQuery],
+  );
+
+  const boardTasks = useMemo(
+    () =>
+      filtered.filter(
+        (t) => t.statusName && t.statusName.toLowerCase() !== "done",
+      ),
+    [filtered],
+  );
+
+  const backlogTasks = useMemo(() => filtered, [filtered]);
+
+  async function handleStatusChange(taskId: number, statusName: string) {
+    if (!canWrite) return;
+    try {
+      await taskApi.updateStatus(workspaceSlug, projectSlug, taskId, statusName);
+      onTasksChanged();
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : "Không đổi trạng thái");
+    }
+  }
+
+  if (loading) return <LoadingState />;
+
+  const statusPills = statuses.map((s) => ({
+    label: s.statusName,
+    count: countByStatus(filtered, s.statusName),
+    color: s.colorCode ?? "#94a3b8",
+  }));
 
   return (
     <div className="flex flex-1 flex-col bg-[#f6f7f9]">
-      {/* Board section */}
+      {error && (
+        <div className="px-6 pt-3">
+          <ErrorAlert message={error} />
+        </div>
+      )}
+
       <section className="border-b border-slate-200 bg-white">
         <div className="flex items-center justify-between px-6 py-3">
           <button
@@ -47,29 +130,42 @@ export function ProjectBacklogTab({ project }: Props) {
               <ChevronRight className="h-4 w-4 text-slate-500" />
             )}
             Board
-            <span className="font-normal text-slate-500">(0 work items)</span>
+            <span className="font-normal text-slate-500">
+              ({boardTasks.length} work items)
+            </span>
           </button>
-          <StatusCountPills
-            pills={[
-              { label: "To Do", count: 0, color: "#94a3b8" },
-              { label: "In Progress", count: 0, color: "#3b82f6" },
-              { label: "Done", count: 0, color: "#22c55e" },
-            ]}
-          />
+          <StatusCountPills pills={statusPills} />
         </div>
         {boardOpen && (
           <div className="px-6 pb-4">
-            <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50">
-              <p className="text-sm text-slate-500">Chưa có công việc trên board.</p>
-              <button
-                type="button"
-                disabled
-                className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-brand-600 opacity-60"
-              >
-                <Plus className="h-4 w-4" />
-                Tạo
-              </button>
-            </div>
+            {boardTasks.length === 0 ? (
+              <div className="flex min-h-[120px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/50">
+                <p className="text-sm text-slate-500">Chưa có công việc trên board.</p>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreate(true)}
+                    className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-brand-600 hover:bg-brand-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Tạo
+                  </button>
+                )}
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                {boardTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    statuses={statuses}
+                    canWrite={canWrite}
+                    onOpen={() => setDetailTaskId(task.id)}
+                    onStatusChange={(name) => handleStatusChange(task.id, name)}
+                  />
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </section>
@@ -78,7 +174,6 @@ export function ProjectBacklogTab({ project }: Props) {
         <GripHorizontal className="h-4 w-4 text-slate-300" aria-hidden />
       </div>
 
-      {/* Backlog section */}
       <section className="flex-1 bg-white">
         <div className="flex items-center justify-between px-6 py-3">
           <button
@@ -92,87 +187,142 @@ export function ProjectBacklogTab({ project }: Props) {
               <ChevronRight className="h-4 w-4 text-slate-500" />
             )}
             Backlog
-            <span className="font-normal text-slate-500">({backlogCount} work items)</span>
+            <span className="font-normal text-slate-500">
+              ({backlogTasks.length} work items)
+            </span>
           </button>
-          <div className="flex items-center gap-2">
-            <StatusCountPills
-              pills={[
-                { label: "To Do", count: backlogCount, color: "#94a3b8" },
-                { label: "In Progress", count: 0, color: "#3b82f6" },
-                { label: "Done", count: 0, color: "#22c55e" },
-              ]}
-            />
-            <button type="button" className="text-slate-400" disabled title="Automation (sắp có)">
-              <Sparkles className="h-4 w-4" />
-            </button>
-          </div>
+          <StatusCountPills pills={statusPills} />
         </div>
 
         {backlogOpen && (
           <div className="px-6 pb-6">
-            {showBanner && (
-              <div className="mb-3 flex items-center justify-between rounded-md border border-violet-100 bg-violet-50/80 px-3 py-2 text-sm text-violet-900">
-                <span className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-violet-600" />
-                  Giao diện mẫu — dữ liệu task thật sẽ kết nối API ở bước Task/Board.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowBanner(false)}
-                  className="rounded p-0.5 text-violet-600 hover:bg-violet-100"
-                  aria-label="Đóng"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-              {DEMO_BACKLOG.map((task) => (
-                <li
-                  key={task.id}
-                  className="flex flex-wrap items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50/80"
-                >
-                  <input
-                    type="checkbox"
-                    disabled
-                    className="h-4 w-4 rounded border-slate-300"
-                    aria-label={`Chọn ${task.title}`}
-                  />
-                  <span className="min-w-0 flex-1 text-sm text-slate-800">
-                    <span className="font-medium text-slate-500">{prefix}-{task.key}</span>{" "}
-                    {task.title}
-                  </span>
-                  <span className="rounded bg-violet-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-800">
-                    {task.label}
-                  </span>
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600"
-                  >
-                    TO DO
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                  <Equal className="h-4 w-4 text-amber-500" strokeWidth={2.5} aria-label="Ưu tiên trung bình" />
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-slate-500">
-                    <User className="h-4 w-4" />
-                  </span>
+              {backlogTasks.length === 0 ? (
+                <li className="px-4 py-8 text-center text-sm text-slate-500">
+                  Chưa có task trong backlog.
                 </li>
-              ))}
+              ) : (
+                backlogTasks.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    statuses={statuses}
+                    canWrite={canWrite}
+                    onOpen={() => setDetailTaskId(task.id)}
+                    onStatusChange={(name) => handleStatusChange(task.id, name)}
+                  />
+                ))
+              )}
             </ul>
 
-            <button
-              type="button"
-              disabled
-              className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-sm font-medium text-brand-600 opacity-70"
-            >
-              <Plus className="h-4 w-4" />
-              Tạo
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setShowCreate(true)}
+                className="mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50"
+              >
+                <Plus className="h-4 w-4" />
+                Tạo
+              </button>
+            )}
           </div>
         )}
       </section>
+
+      {showCreate && (
+        <TaskCreateModal
+          workspaceSlug={workspaceSlug}
+          projectSlug={projectSlug}
+          members={members}
+          statuses={statuses}
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            onTasksChanged();
+            load();
+          }}
+        />
+      )}
+
+      {detailTaskId != null && (
+        <TaskDetailModal
+          workspaceSlug={workspaceSlug}
+          projectSlug={projectSlug}
+          taskId={detailTaskId}
+          members={members}
+          statuses={statuses}
+          canWrite={canWrite}
+          canDelete={canDelete}
+          onClose={() => setDetailTaskId(null)}
+          onUpdated={() => {
+            onTasksChanged();
+            load();
+          }}
+          onDeleted={() => {
+            onTasksChanged();
+            setDetailTaskId(null);
+            load();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function TaskRow({
+  task,
+  statuses,
+  canWrite,
+  onOpen,
+  onStatusChange,
+}: {
+  task: TaskSummary;
+  statuses: TaskStatus[];
+  canWrite: boolean;
+  onOpen: () => void;
+  onStatusChange: (statusName: string) => void;
+}) {
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-3 py-2.5 transition hover:bg-slate-50/80">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 text-left text-sm text-slate-800"
+      >
+        <span className="font-medium text-slate-500">{task.taskKey}</span> {task.title}
+        {task.overdue && (
+          <span className="ml-2 text-xs font-medium text-red-600">Quá hạn</span>
+        )}
+      </button>
+      <select
+        value={task.statusName ?? "Todo"}
+        disabled={!canWrite}
+        onChange={(e) => onStatusChange(e.target.value)}
+        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700"
+      >
+        {statuses.map((s) => (
+          <option key={s.id} value={s.statusName}>
+            {s.statusName}
+          </option>
+        ))}
+      </select>
+      <Equal
+        className="h-4 w-4"
+        strokeWidth={2.5}
+        style={{ color: priorityColor(task.priority) }}
+        aria-label={`Ưu tiên ${task.priority}`}
+      />
+      {task.deadline && (
+        <span className="text-xs text-slate-500">{formatDeadline(task.deadline)}</span>
+      )}
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-slate-500">
+        {task.assignees.length > 0 ? (
+          <span className="text-[10px] font-semibold">
+            {task.assignees[0].username.slice(0, 2).toUpperCase()}
+          </span>
+        ) : (
+          <User className="h-4 w-4" />
+        )}
+      </span>
+    </li>
   );
 }

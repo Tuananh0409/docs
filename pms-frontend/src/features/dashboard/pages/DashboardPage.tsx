@@ -7,6 +7,8 @@ import { ErrorAlert } from "@/shared/components/feedback/ErrorAlert";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { useAuth } from "@/shared/context/AuthContext";
 import { canCreateWorkspace } from "@/shared/utils/workspacePermissions";
+import { taskApi } from "@/features/task/api/taskApi";
+import type { MyTasksSummary } from "@/features/task/types";
 import { workspaceApi } from "@/features/workspace/api/workspaceApi";
 import type { Workspace } from "@/features/workspace/types";
 import { workspacePath } from "@/shared/routes/paths";
@@ -15,6 +17,7 @@ export function DashboardPage() {
   const { user } = useAuth();
   const canCreate = canCreateWorkspace(user);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [taskSummary, setTaskSummary] = useState<MyTasksSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -22,7 +25,12 @@ export function DashboardPage() {
     setLoading(true);
     setError("");
     try {
-      setWorkspaces(await workspaceApi.list());
+      const [ws, tasks] = await Promise.all([
+        workspaceApi.list(),
+        taskApi.mineSummary().catch(() => null),
+      ]);
+      setWorkspaces(ws);
+      setTaskSummary(tasks);
     } catch (err) {
       setError(
         err instanceof ApiClientError ? err.message : "Không tải được dữ liệu",
@@ -40,17 +48,45 @@ export function DashboardPage() {
     <>
       <PageHeader
         title={`Xin chào, ${user?.username ?? "bạn"}`}
-        description="Tổng quan hoạt động — các module khác sẽ bổ sung dần."
+        description="Tổng quan workspace và công việc được gán cho bạn."
       />
 
       {error && <ErrorAlert message={error} className="mb-4" />}
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: "Workspace", value: loading ? "—" : String(workspaces.length), live: true },
-          { label: "Dự án", value: "—", live: false },
-          { label: "Task của tôi", value: "—", live: false },
-          { label: "Quá hạn", value: "—", live: false },
+          {
+            label: "Workspace",
+            value: loading ? "—" : String(workspaces.length),
+            live: true,
+          },
+          {
+            label: "Task của tôi",
+            value: loading
+              ? "—"
+              : taskSummary != null
+                ? String(taskSummary.totalAssigned)
+                : "0",
+            live: true,
+          },
+          {
+            label: "Đang làm",
+            value: loading
+              ? "—"
+              : taskSummary != null
+                ? String(taskSummary.inProgress)
+                : "0",
+            live: true,
+          },
+          {
+            label: "Quá hạn",
+            value: loading
+              ? "—"
+              : taskSummary != null
+                ? String(taskSummary.overdue)
+                : "0",
+            live: true,
+          },
         ].map((stat) => (
           <div
             key={stat.label}
@@ -58,9 +94,6 @@ export function DashboardPage() {
           >
             <p className="text-sm text-slate-500">{stat.label}</p>
             <p className="mt-1 text-3xl font-bold text-slate-900">{stat.value}</p>
-            {!stat.live && (
-              <p className="mt-1 text-xs text-amber-600">Sắp có</p>
-            )}
           </div>
         ))}
       </div>
