@@ -26,5 +26,8 @@ public class UpdateProjectRequest {
     @Size(max = 50, message = "Trạng thái tối đa 50 ký tự")
     private String statusName;
 
+    @Size(max = 50, message = "Độ ưu tiên tối đa 50 ký tự")
+    private String priorityName;
+
     private Long projectLeadUserId;
 }

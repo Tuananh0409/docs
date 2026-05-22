@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { ChevronRight, Ellipsis, ListChecks, Plus } from "lucide-react";
 import { projectApi } from "@/features/project/api/projectApi";
+import { patchProjectPriority } from "@/features/project/utils/projectPriority";
+import { ProjectListControls } from "@/features/project/components/ProjectListControls";
+import { SidebarPriorityLegend } from "@/features/project/components/SidebarPriorityLegend";
+import {
+  sidebarProjectRowAccent,
+  sidebarProjectRowAccentStyle,
+  SidebarPriorityMark,
+} from "@/features/project/components/SidebarPriorityMark";
 import type { ProjectSummary } from "@/features/project/types";
 import { workspaceApi } from "../api/workspaceApi";
 import type { Workspace } from "../types";
@@ -14,6 +22,16 @@ import {
 } from "@/shared/events/appEvents";
 import { SIDEBAR_SECTION_LABEL } from "@/shared/components/layout/sidebarStyles";
 import { createProjectPath, projectPath, workspacePath } from "@/shared/routes/paths";
+import {
+  persistProjectListSort,
+  persistProjectPriorityFilter,
+  readProjectListSort,
+  readProjectPriorityFilter,
+} from "@/shared/utils/projectListPrefs";
+import {
+  applyProjectListView,
+  type ProjectListSort,
+} from "@/shared/utils/projectListUtils";
 import { canCreateWorkspace } from "@/shared/utils/workspacePermissions";
 import { WorkspaceAvatar } from "./WorkspaceAvatar";
 
@@ -66,6 +84,8 @@ export function WorkspaceSidebarTree({ onWorkspacesLoaded }: Props) {
     Record<number, ProjectSummary[]>
   >({});
   const [loadingProjects, setLoadingProjects] = useState<Set<number>>(new Set());
+  const [priorityFilter, setPriorityFilter] = useState(() => readProjectPriorityFilter());
+  const [projectSort, setProjectSort] = useState<ProjectListSort>(() => readProjectListSort());
 
   const loadWorkspaces = useCallback(async () => {
     setLoading(true);
@@ -125,7 +145,30 @@ export function WorkspaceSidebarTree({ onWorkspacesLoaded }: Props) {
 
     function handleProjectsChanged(event: Event) {
       const detail = (event as CustomEvent<ProjectsChangedDetail>).detail;
-      if (detail?.workspaceId != null) loadProjects(detail.workspaceId);
+      if (detail?.workspaceId == null) return;
+
+      if (detail.projectId != null) {
+        setProjectsByWorkspace((prev) => {
+          const list = prev[detail.workspaceId];
+          if (!list) return prev;
+          return {
+            ...prev,
+            [detail.workspaceId]: list.map((p) => {
+              if (p.id !== detail.projectId) return p;
+              let next = p;
+              if (detail.priorityName) {
+                next = patchProjectPriority(next, detail.priorityName);
+              }
+              if (detail.statusName != null) {
+                next = { ...next, statusName: detail.statusName };
+              }
+              return next;
+            }),
+          };
+        });
+      }
+
+      loadProjects(detail.workspaceId);
     }
 
     window.addEventListener(APP_EVENTS.workspacesChanged, handleWorkspacesChanged);
@@ -189,6 +232,21 @@ export function WorkspaceSidebarTree({ onWorkspacesLoaded }: Props) {
 
   return (
     <div>
+      <ProjectListControls
+        compact
+        priorityFilter={priorityFilter}
+        sort={projectSort}
+        onPriorityFilterChange={(value) => {
+          setPriorityFilter(value);
+          persistProjectPriorityFilter(value);
+        }}
+        onSortChange={(value) => {
+          setProjectSort(value);
+          persistProjectListSort(value);
+        }}
+      />
+      <SidebarPriorityLegend />
+
       <div className="mb-2 flex items-center justify-between px-1">
         <p className={SIDEBAR_SECTION_LABEL}>Phòng ban</p>
         {canCreate && (
@@ -216,8 +274,13 @@ export function WorkspaceSidebarTree({ onWorkspacesLoaded }: Props) {
         <ul className="space-y-1">
           {workspaces.map((workspace) => {
             const isExpanded = expanded.has(workspace.id);
-            const projects = projectsByWorkspace[workspace.id];
+            const rawProjects = projectsByWorkspace[workspace.id];
+            const visibleProjects =
+              rawProjects != null
+                ? applyProjectListView(rawProjects, priorityFilter, projectSort)
+                : undefined;
             const isLoadingProjects = loadingProjects.has(workspace.id);
+            const filterActive = priorityFilter.length > 0;
             const isActiveWorkspace =
               activeWorkspaceId === workspace.id &&
               !location.pathname.includes("/projects/");
@@ -274,26 +337,48 @@ export function WorkspaceSidebarTree({ onWorkspacesLoaded }: Props) {
 
                 {isExpanded && (
                   <div className="mb-1 ml-[22px] border-l border-slate-200 pl-2">
-                    {isLoadingProjects && !projects && (
+                    {isLoadingProjects && !rawProjects && (
                       <p className="py-1.5 text-[11px] text-slate-400">Đang tải dự án…</p>
                     )}
-                    {projects && projects.length === 0 && !isLoadingProjects && (
+                    {rawProjects && rawProjects.length === 0 && !isLoadingProjects && (
                       <p className="py-1.5 text-[11px] text-slate-400">Chưa có dự án</p>
                     )}
-                    {projects && projects.length > 0 && (
+                    {rawProjects &&
+                      rawProjects.length > 0 &&
+                      visibleProjects &&
+                      visibleProjects.length === 0 &&
+                      !isLoadingProjects && (
+                        <p className="py-1.5 text-[11px] text-slate-400">
+                          Không có dự án {filterActive ? "khớp bộ lọc" : ""}
+                        </p>
+                      )}
+                    {visibleProjects && visibleProjects.length > 0 && (
                       <ul className="space-y-0.5 py-0.5">
-                        {projects.map((project) => (
+                        {visibleProjects.map((project) => (
                           <li key={project.id}>
                             <NavLink
                               to={projectPath(workspace.slug, project.slug, "backlog")}
-                              className={projectItemClass}
-                              title={project.name}
+                              className={({ isActive }) =>
+                                [
+                                  projectItemClass({ isActive }),
+                                  sidebarProjectRowAccent(project.priorityName),
+                                ].join(" ")
+                              }
+                              style={sidebarProjectRowAccentStyle(project.priorityName)}
+                              title={
+                                project.priorityName
+                                  ? `${project.name} · ${project.priorityName}`
+                                  : project.name
+                              }
                             >
                               <ListChecks
                                 className="h-4 w-4 shrink-0 text-slate-400"
                                 strokeWidth={2}
                               />
-                              <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <SidebarPriorityMark name={project.priorityName} />
+                                <span className="truncate">{project.name}</span>
+                              </span>
                             </NavLink>
                           </li>
                         ))}

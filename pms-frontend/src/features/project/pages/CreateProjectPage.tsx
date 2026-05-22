@@ -8,7 +8,10 @@ import { ErrorAlert } from "@/shared/components/feedback/ErrorAlert";
 import { LoadingState } from "@/shared/components/feedback/LoadingState";
 import { PageHeader } from "@/shared/components/layout/PageHeader";
 import { Button } from "@/shared/components/ui/Button";
-import { PROJECT_COLOR_PRESETS } from "@/shared/config/project-options";
+import {
+  DEFAULT_PROJECT_PRIORITY,
+  PROJECT_COLOR_PRESETS,
+} from "@/shared/config/project-options";
 import { useAuth } from "@/shared/context/AuthContext";
 import { useToast } from "@/shared/context/ToastContext";
 import { notifyProjectsChanged } from "@/shared/events/appEvents";
@@ -28,6 +31,7 @@ const initialFormState = (leadId: string): ProjectCreatePreviewState => ({
   description: "",
   themeColor: PROJECT_COLOR_PRESETS[0],
   statusName: "Active",
+  priorityName: DEFAULT_PROJECT_PRIORITY,
   startDate: "",
   endDate: "",
   privacyMode: "PRIVATE",
@@ -128,6 +132,7 @@ export function CreateProjectPage() {
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
         statusName: form.statusName,
+        priorityName: form.priorityName,
         privacyMode: form.privacyMode,
         colorCode: form.themeColor,
         code: showAdvanced && code.trim() ? code.trim() : undefined,

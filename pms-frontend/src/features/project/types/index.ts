@@ -5,6 +5,9 @@ export interface ProjectSummary {
   slug: string;
   colorCode: string | null;
   statusName: string | null;
+  priorityName: string | null;
+  priorityColorCode: string | null;
+  priorityWeight: number | null;
   myRole: string | null;
   workspaceId: number;
 }
@@ -18,6 +21,9 @@ export interface ProjectDetail {
   description: string | null;
   statusName: string | null;
   statusColorCode: string | null;
+  priorityName: string | null;
+  priorityColorCode: string | null;
+  priorityWeight: number | null;
   colorCode: string | null;
   privacyMode: string;
   startDate: string | null;
@@ -25,6 +31,8 @@ export interface ProjectDetail {
   projectLeadUserId: number | null;
   projectManagerUsername: string | null;
   myRole: string | null;
+  canManage?: boolean;
+  canEditPriority?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +46,7 @@ export interface CreateProjectPayload {
   colorCode?: string;
   privacyMode?: string;
   statusName?: string;
+  priorityName?: string;
   code?: string;
   slug?: string;
 }
@@ -51,6 +60,7 @@ export interface UpdateProjectPayload {
   colorCode?: string;
   privacyMode?: string;
   statusName?: string;
+  priorityName?: string;
 }
 
 export interface ProjectMember {

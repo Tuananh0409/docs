@@ -9,6 +9,12 @@ export type WorkspacesChangedDetail = {
 
 export type ProjectsChangedDetail = {
   workspaceId: number;
+  projectId?: number;
+  priorityName?: string | null;
+  priorityColorCode?: string | null;
+  priorityWeight?: number | null;
+  statusName?: string | null;
+  privacyMode?: string | null;
 };
 
 export function notifyWorkspacesChanged(detail?: WorkspacesChangedDetail) {
