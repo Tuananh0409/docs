@@ -41,6 +41,11 @@ public enum ErrorCode {
     WORKSPACE_LOGO_TOO_LARGE("ERR_WS_14", "Logo vượt quá dung lượng cho phép (tối đa 2MB)", HttpStatus.BAD_REQUEST),
     WORKSPACE_LOGO_TYPE_NOT_ALLOWED(
             "ERR_WS_15", "Logo chỉ hỗ trợ PNG, JPG, GIF hoặc WebP", HttpStatus.BAD_REQUEST),
+    TASK_NOT_FOUND("ERR_TK_01", "Công việc không tồn tại", HttpStatus.NOT_FOUND),
+    TASK_FORBIDDEN("ERR_TK_02", "Bạn không có quyền thao tác trên công việc này", HttpStatus.FORBIDDEN),
+    TASK_STATUS_INVALID("ERR_TK_07", "Trạng thái công việc không hợp lệ", HttpStatus.BAD_REQUEST),
+    TASK_COMMENT_NOT_FOUND("ERR_TK_08", "Bình luận không tồn tại", HttpStatus.NOT_FOUND),
+    MILESTONE_NOT_FOUND("ERR_MS_03", "Milestone không tồn tại", HttpStatus.NOT_FOUND),
     VALIDATION_ERROR("ERR_VALIDATION", "Dữ liệu không hợp lệ", HttpStatus.BAD_REQUEST);
 
     private final String code;
