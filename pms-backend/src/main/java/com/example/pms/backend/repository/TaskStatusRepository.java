@@ -7,7 +7,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TaskStatusRepository extends JpaRepository<TaskStatus, Long> {
 
-    Optional<TaskStatus> findByStatusNameIgnoreCase(String statusName);
+    boolean existsByProjectId(Long projectId);
 
-    List<TaskStatus> findAllByOrderByPositionAsc();
+    List<TaskStatus> findByProjectIdOrderByPositionAsc(Long projectId);
+
+    Optional<TaskStatus> findByProjectIdAndStatusNameIgnoreCase(Long projectId, String statusName);
+
+    Optional<TaskStatus> findByIdAndProjectId(Long id, Long projectId);
 }

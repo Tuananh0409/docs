@@ -22,7 +22,7 @@ export function TaskPriorityDropdownList({
   return (
     <ul
       className={[
-        "overflow-hidden rounded bg-white py-1 shadow-[0_4px_8px_-2px_rgba(9,30,66,0.25),0_0_1px_rgba(9,30,66,0.31)]",
+        "min-w-[168px] overflow-hidden rounded bg-white py-1 shadow-[0_4px_8px_-2px_rgba(9,30,66,0.25),0_0_1px_rgba(9,30,66,0.31)]",
         "border border-[#DFE1E6]",
         className,
       ].join(" ")}
@@ -40,6 +40,7 @@ export function TaskPriorityDropdownList({
                 priority={p.name}
                 size={compact ? "sm" : "md"}
                 showLabel
+                showTitle={false}
                 compactLabel={compact}
                 colorCode={p.colorCode}
                 options={priorities}

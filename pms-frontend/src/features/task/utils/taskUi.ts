@@ -57,8 +57,8 @@ export function taskPriorityName(task: { priorityName?: string | null }): string
 
 export function priorityMenuItemClass(selected: boolean, compact = false): string {
   const base = compact
-    ? "relative flex w-full items-center gap-2 py-1.5 text-left text-xs text-[#42526E]"
-    : "relative flex w-full items-center gap-2.5 py-2 text-left text-sm text-[#42526E]";
+    ? "relative flex w-full min-w-0 items-center gap-2 whitespace-nowrap py-1.5 text-left text-xs text-[#42526E]"
+    : "relative flex w-full min-w-0 items-center gap-2.5 whitespace-nowrap py-2 text-left text-sm text-[#42526E]";
   const pad = selected
     ? "border-l-[3px] border-l-[#0052CC] bg-[#F4F5F7] pl-2.5"
     : "border-l-[3px] border-l-transparent pl-2.5";
@@ -99,4 +99,117 @@ export function filterTasksByQuery(tasks: TaskSummary[], query: string): TaskSum
   return tasks.filter(
     (t) => t.title.toLowerCase().includes(q) || t.taskKey.toLowerCase().includes(q),
   );
+}
+
+export function isDoneStatus(statusName: string | null | undefined): boolean {
+  return (statusName ?? "").trim().toLowerCase() === "done";
+}
+
+export function taskResolution(statusName: string | null | undefined): string {
+  return isDoneStatus(statusName) ? "Hoàn thành" : "Chưa xử lý";
+}
+
+/** Ngày kiểu Jira list: «22 May 2026». */
+export function formatTaskListDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("vi-VN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** Ngày + giờ cho bảng danh sách (vi-VN). */
+export function formatTaskListDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("vi-VN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatTaskDueDate(iso: string | null | undefined): string {
+  if (!iso) return "Không có";
+  return formatTaskListDate(iso);
+}
+
+export type TaskListSortKey = "created" | "updated" | "status";
+export type TaskListSortDir = "asc" | "desc";
+
+export function sortTasksForListView(
+  tasks: TaskSummary[],
+  statuses: TaskStatus[],
+  sortKey: TaskListSortKey,
+  sortDir: TaskListSortDir,
+): TaskSummary[] {
+  const statusOrder = new Map(
+    statuses.map((s, i) => [s.statusName.toLowerCase(), i]),
+  );
+  const mul = sortDir === "asc" ? 1 : -1;
+
+  return [...tasks].sort((a, b) => {
+    if (sortKey === "created") {
+      return (
+        mul *
+        (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      );
+    }
+    if (sortKey === "updated") {
+      return (
+        mul *
+        (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
+      );
+    }
+    const sa = statusOrder.get((a.statusName ?? "").toLowerCase()) ?? 999;
+    const sb = statusOrder.get((b.statusName ?? "").toLowerCase()) ?? 999;
+    if (sa !== sb) return mul * (sa - sb);
+    return a.taskKey.localeCompare(b.taskKey);
+  });
+}
+
+export function statusColorForTask(
+  statusName: string | null | undefined,
+  statuses: TaskStatus[],
+): string {
+  const s = statuses.find(
+    (x) => x.statusName.toLowerCase() === (statusName ?? "").toLowerCase(),
+  );
+  return s?.colorCode ?? "#42526E";
+}
+
+/** Sắp xếp theo thứ tự cột Kanban rồi mã task. */
+export function sortTasksForList(
+  tasks: TaskSummary[],
+  statuses: TaskStatus[],
+): TaskSummary[] {
+  const order = new Map(statuses.map((s, i) => [s.statusName.toLowerCase(), i]));
+  return [...tasks].sort((a, b) => {
+    const sa = order.get((a.statusName ?? "").toLowerCase()) ?? 999;
+    const sb = order.get((b.statusName ?? "").toLowerCase()) ?? 999;
+    if (sa !== sb) return sa - sb;
+    return a.taskKey.localeCompare(b.taskKey);
+  });
+}
+
+/** Đổi thứ tự cột Kanban (kéo cột A thả vào vị trí cột B). */
+export function reorderStatusesList<T extends { id: number }>(
+  list: T[],
+  fromId: number,
+  toId: number,
+): T[] {
+  const fromIdx = list.findIndex((c) => c.id === fromId);
+  const toIdx = list.findIndex((c) => c.id === toId);
+  if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return list;
+  const next = [...list];
+  const [moved] = next.splice(fromIdx, 1);
+  next.splice(toIdx, 0, moved);
+  return next;
 }

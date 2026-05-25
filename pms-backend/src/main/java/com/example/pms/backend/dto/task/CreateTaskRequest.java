@@ -30,5 +30,10 @@ public class CreateTaskRequest {
 
     private LocalDate deadline;
 
+    private LocalDate startDate;
+
     private List<Long> assigneeUserIds;
+
+    /** Người báo cáo; mặc định = user đang đăng nhập. */
+    private Long reporterUserId;
 }

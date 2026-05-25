@@ -15,6 +15,8 @@ type Props = {
   members: ProjectMember[];
   statuses: TaskStatus[];
   defaultStatusName?: string;
+  /** yyyy-MM-dd — từ ô lịch khi bấm + */
+  defaultDeadline?: string;
   onClose: () => void;
   onCreated: () => void;
 };
@@ -25,6 +27,7 @@ export function TaskCreateModal({
   members,
   statuses,
   defaultStatusName = "Todo",
+  defaultDeadline = "",
   onClose,
   onCreated,
 }: Props) {
@@ -33,14 +36,19 @@ export function TaskCreateModal({
   const { defaultPriority } = useTaskPriorities();
   const [priority, setPriority] = useState(defaultPriority);
   const [statusName, setStatusName] = useState(defaultStatusName);
-  const [deadline, setDeadline] = useState("");
+  const [deadline, setDeadline] = useState(defaultDeadline);
   const [assigneeIds, setAssigneeIds] = useState<number[]>([]);
+  const [reporterUserId, setReporterUserId] = useState<number | "">("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setStatusName(defaultStatusName);
   }, [defaultStatusName]);
+
+  useEffect(() => {
+    setDeadline(defaultDeadline);
+  }, [defaultDeadline]);
 
   function toggleAssignee(userId: number) {
     setAssigneeIds((prev) =>
@@ -60,6 +68,8 @@ export function TaskCreateModal({
         statusName,
         deadline: deadline || undefined,
         assigneeUserIds: assigneeIds.length > 0 ? assigneeIds : undefined,
+        reporterUserId:
+          reporterUserId !== "" ? reporterUserId : undefined,
       });
       onCreated();
       onClose();
@@ -127,6 +137,23 @@ export function TaskCreateModal({
             onChange={(e) => setDeadline(e.target.value)}
             className={inputClass}
           />
+        </label>
+        <label className="block text-sm font-medium text-slate-700">
+          Người báo cáo
+          <select
+            value={reporterUserId}
+            onChange={(e) =>
+              setReporterUserId(e.target.value ? Number(e.target.value) : "")
+            }
+            className={inputClass}
+          >
+            <option value="">Mặc định (bạn)</option>
+            {members.map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.username}
+              </option>
+            ))}
+          </select>
         </label>
         <fieldset>
           <legend className="text-sm font-medium text-slate-700">Người thực hiện</legend>

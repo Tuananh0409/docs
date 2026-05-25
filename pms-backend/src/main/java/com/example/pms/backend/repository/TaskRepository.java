@@ -4,6 +4,7 @@ import com.example.pms.backend.entity.Task;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +15,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             LEFT JOIN FETCH t.priority
             LEFT JOIN FETCH t.status
             LEFT JOIN FETCH t.createdBy
+            LEFT JOIN FETCH t.reporter
             LEFT JOIN FETCH t.milestone
             WHERE t.project.id = :projectId AND t.deleted = false
             ORDER BY t.createdAt DESC
@@ -27,6 +29,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             LEFT JOIN FETCH t.project p
             LEFT JOIN FETCH p.workspace
             LEFT JOIN FETCH t.createdBy
+            LEFT JOIN FETCH t.reporter
             WHERE t.id = :taskId AND t.project.id = :projectId AND t.deleted = false
             """)
     Optional<Task> findByIdAndProjectIdWithDetails(
@@ -57,4 +60,17 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
               AND LOWER(s.statusName) = 'done'
             """)
     long countDoneByProjectId(@Param("projectId") Long projectId);
+
+    long countByProjectIdAndStatusIdAndDeletedFalse(Long projectId, Long statusId);
+
+    @Modifying(clearAutomatically = true)
+    @Query(
+            """
+            UPDATE Task t SET t.status.id = :targetStatusId
+            WHERE t.project.id = :projectId AND t.status.id = :sourceStatusId AND t.deleted = false
+            """)
+    int reassignTasksStatus(
+            @Param("projectId") Long projectId,
+            @Param("sourceStatusId") Long sourceStatusId,
+            @Param("targetStatusId") Long targetStatusId);
 }
