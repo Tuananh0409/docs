@@ -331,7 +331,7 @@ export function ProjectCalendarTab({
         </div>
         <p className="mt-2 text-xs text-[#6B778C]">
           Chỉ hiển thị công việc có <strong>hạn chót</strong>. Bấm <strong>+</strong>{" "}
-          để mở form tạo phía trên ô ngày (giống Jira).
+          để mở form tạo ngay phía trên ô ngày.
         </p>
       </div>
 
