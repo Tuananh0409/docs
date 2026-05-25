@@ -109,7 +109,8 @@ Cấu hình JWT (`application.properties`): `app.jwt.secret`, `app.jwt.access-to
 
 | Method | Path | Mô tả |
 |--------|------|--------|
-| GET | `/api/task-statuses` | Danh sách trạng thái (Todo, In Progress, …) |
+| GET/POST | `/api/workspaces/{ws}/projects/{ps}/task-statuses` | Cột Kanban theo dự án (Todo, In Progress, …) |
+| PATCH | `.../task-statuses/reorder` | Sắp xếp lại thứ tự cột (kéo thả) |
 | GET | `/api/tasks/mine` | Task được gán cho user hiện tại |
 | GET | `/api/tasks/mine/summary` | Thống kê task của tôi |
 | GET/POST | `/api/workspaces/{ws}/projects/{ps}/tasks` | Danh sách / tạo task |
@@ -146,7 +147,7 @@ Spring Boot tự đọc `application-local.properties` nếu file tồn tại (p
 | Backend không start — lỗi kết nối DB | Postgres chưa lên | `docker compose up -d`, kiểm tra `docker ps` |
 | Login 401 `ERR_US_03` | Sai email/mật khẩu | Dùng tài khoản dev ở trên |
 | `npm install` lỗi SSL (mạng công ty) | Certificate nội bộ | `npm install --strict-ssl=false` |
-| Port 8080 already in use | Process backend cũ còn chạy | Tắt process cũ, restart backend |
+| `Port 8080 was already in use` + `BUILD FAILURE` | **Backend đã chạy** (terminal khác / lần chạy trước) — không phải app hỏng | **Không** chạy thêm `spring-boot:run`. Mở http://localhost:5173 và F5. Muốn chạy lại: `taskkill /PID <pid> /F` (PID từ `netstat -ano` cột 8080) rồi chạy **một** lần |
 | `BUILD SUCCESS` rồi terminal về `PS>` (backend tự tắt) | DevTools auto-restart trên Windows / chạy nhầm lệnh `install` | Dùng `spring-boot:run`, **git pull** bản mới (đã tắt auto-restart). Terminal phải **treo**, chưa về prompt |
 
 ### Kiểm tra DB có mật khẩu dev chưa
