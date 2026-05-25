@@ -232,7 +232,7 @@ export function CreateProjectPage() {
             { label: "Tạo dự án" },
           ]}
           title="Tạo dự án mới"
-          description={`Khởi tạo dự án trong phòng ban ${workspace.name}. Điền thông tin bên dưới — giống trải nghiệm full-page trên Asana hay Jira.`}
+          description={`Khởi tạo dự án trong phòng ban ${workspace.name}. Điền thông tin bên dưới để thiết lập phạm vi, thời gian và thành viên phụ trách.`}
           actions={
             <Link to={workspacePath(workspace.slug)}>
               <Button type="button" variant="secondary" className="gap-2 rounded-xl">

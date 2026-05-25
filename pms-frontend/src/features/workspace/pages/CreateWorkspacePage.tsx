@@ -140,7 +140,7 @@ export function CreateWorkspacePage() {
         <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm ring-1 ring-slate-200/80">
           <Sparkles className="h-3.5 w-3.5 text-brand-600" />
           <Building2 className="h-3.5 w-3.5" />
-          Full-page setup — giống trải nghiệm tạo dự án &amp; workspace trên Asana.
+          Thiết lập không gian làm việc để quản lý dự án, thành viên và quyền truy cập tập trung.
         </p>
       </div>
 
