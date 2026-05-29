@@ -41,13 +41,17 @@ public class ProjectAccessGuard {
     }
 
     public void requireProjectAccess(Project project, Long userId) {
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return;
-        }
-        if (projectMemberRepository.findByProjectIdAndUserId(project.getId(), userId).isPresent()) {
+        if (hasProjectAccess(project, userId)) {
             return;
         }
         throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
+    }
+
+    public boolean hasProjectAccess(Project project, Long userId) {
+        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
+            return true;
+        }
+        return projectMemberRepository.findByProjectIdAndUserId(project.getId(), userId).isPresent();
     }
 
     public void requireProjectWriteAccess(Project project, Long userId) {

@@ -24,9 +24,38 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, Long> {
 
     boolean existsBySlugIgnoreCase(String slug);
 
+    @Query("""
+            SELECT w.code FROM Workspace w
+            WHERE LOWER(w.code) LIKE LOWER(CONCAT(:prefix, '%'))
+            """)
+    List<String> findExistingCodesByPrefix(@Param("prefix") String prefix);
+
+    @Query("""
+            SELECT w.slug FROM Workspace w
+            WHERE LOWER(w.slug) LIKE LOWER(CONCAT(:prefix, '%'))
+            """)
+    List<String> findExistingSlugsByPrefix(@Param("prefix") String prefix);
+
     Optional<Workspace> findByIdAndDeletedFalse(Long id);
 
+    @Query("""
+            SELECT w FROM Workspace w
+            LEFT JOIN FETCH w.owner
+            WHERE w.id = :id AND w.deleted = false
+            """)
+    Optional<Workspace> findByIdAndDeletedFalseWithOwner(@Param("id") Long id);
+
     Optional<Workspace> findBySlugIgnoreCaseAndDeletedFalse(String slug);
+
+    @Query("""
+            SELECT w, r.roleName FROM Workspace w
+            LEFT JOIN FETCH w.owner
+            JOIN WorkspaceMember m ON m.workspace.id = w.id AND m.user.id = :userId
+            JOIN m.role r
+            WHERE w.deleted = false
+            ORDER BY w.createdAt DESC
+            """)
+    List<Object[]> findAllAccessibleWithMyRoleByUserId(@Param("userId") Long userId);
 
     @Query("""
             SELECT w FROM Workspace w

@@ -20,7 +20,6 @@ import com.example.pms.backend.repository.UserRepository;
 import com.example.pms.backend.repository.WorkspaceInvitationRepository;
 import com.example.pms.backend.repository.WorkspaceMemberRepository;
 import com.example.pms.backend.repository.WorkspaceRepository;
-import com.example.pms.backend.repository.WorkspaceRoleRepository;
 import com.example.pms.backend.security.CurrentUserProvider;
 import com.example.pms.backend.util.SlugUtils;
 import com.example.pms.backend.workspace.WorkspacePrivacy;
@@ -28,7 +27,9 @@ import java.net.URI;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -48,11 +49,11 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final WorkspaceInvitationRepository workspaceInvitationRepository;
-    private final WorkspaceRoleRepository workspaceRoleRepository;
     private final UserRepository userRepository;
     private final ProjectRepository projectRepository;
     private final CurrentUserProvider currentUserProvider;
     private final WorkspaceMapper workspaceMapper;
+    private final LookupCacheService lookupCacheService;
 
     @Transactional
     public WorkspaceResponse create(CreateWorkspaceRequest request) {
@@ -74,34 +75,8 @@ public class WorkspaceService {
                 ? SlugUtils.toSlug(request.getSlug().trim())
                 : SlugUtils.toSlug(request.getName());
 
-        String baseCode = code;
-        int codeSuffix = 1;
-        while (workspaceRepository.existsByCodeIgnoreCase(code)) {
-            codeSuffix++;
-            code = baseCode + codeSuffix;
-            if (code.length() > 50) {
-                code = baseCode + (System.currentTimeMillis() % 100000);
-                break;
-            }
-            if (codeSuffix > 500) {
-                code = baseCode + (System.currentTimeMillis() % 100000);
-                break;
-            }
-        }
-        int slugSuffix = 0;
-        String baseSlug = slug;
-        while (workspaceRepository.existsBySlugIgnoreCase(slug)) {
-            slugSuffix++;
-            slug = baseSlug + "-" + slugSuffix;
-            if (slug.length() > 150) {
-                slug = baseSlug + "-" + (System.currentTimeMillis() % 10000);
-                break;
-            }
-            if (slugSuffix > 500) {
-                slug = baseSlug + "-" + (System.currentTimeMillis() % 10000);
-                break;
-            }
-        }
+        code = resolveUniqueCode(code);
+        slug = resolveUniqueSlug(slug);
 
         if (request.getPrivacyMode() != null
                 && !request.getPrivacyMode().isBlank()
@@ -129,7 +104,7 @@ public class WorkspaceService {
 
         workspace = workspaceRepository.save(workspace);
 
-        WorkspaceRole adminRole = getRoleByName(ROLE_ADMIN);
+        WorkspaceRole adminRole = lookupCacheService.requireWorkspaceRole(ROLE_ADMIN);
         workspaceMemberRepository.save(WorkspaceMember.builder()
                 .workspace(workspace)
                 .user(currentUser)
@@ -143,24 +118,24 @@ public class WorkspaceService {
     @Transactional(readOnly = true)
     public List<WorkspaceResponse> listMine() {
         User currentUser = currentUserProvider.getCurrentUser();
-        return workspaceRepository.findAllAccessibleByUserId(currentUser.getId()).stream()
-                .map(w -> workspaceMapper.toResponse(w, resolveMyRole(w.getId(), currentUser.getId())))
+        return workspaceRepository.findAllAccessibleWithMyRoleByUserId(currentUser.getId()).stream()
+                .map(row -> workspaceMapper.toResponse((Workspace) row[0], (String) row[1]))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public WorkspaceResponse getById(Long workspaceId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Workspace workspace = getActiveWorkspace(workspaceId);
-        requireMember(workspaceId, currentUser.getId());
-        return workspaceMapper.toResponse(workspace, resolveMyRole(workspaceId, currentUser.getId()));
+        WorkspaceMember membership = loadMembership(workspaceId, currentUser.getId());
+        return workspaceMapper.toResponse(
+                membership.getWorkspace(), membership.getRole().getRoleName());
     }
 
     @Transactional
     public WorkspaceResponse update(Long workspaceId, UpdateWorkspaceRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Workspace workspace = getActiveWorkspace(workspaceId);
-        requireWorkspaceAdmin(workspaceId, currentUser.getId());
+        WorkspaceMember membership = loadAdminMembership(workspaceId, currentUser.getId());
+        Workspace workspace = membership.getWorkspace();
 
         if (request.getName() != null && !request.getName().isBlank()) {
             String newName = request.getName().trim();
@@ -198,14 +173,14 @@ public class WorkspaceService {
         }
 
         workspace = workspaceRepository.save(workspace);
-        return workspaceMapper.toResponse(workspace, resolveMyRole(workspaceId, currentUser.getId()));
+        return workspaceMapper.toResponse(workspace, membership.getRole().getRoleName());
     }
 
     @Transactional
     public void delete(Long workspaceId, DeleteWorkspaceRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Workspace workspace = getActiveWorkspace(workspaceId);
         requireWorkspaceAdmin(workspaceId, currentUser.getId());
+        Workspace workspace = getActiveWorkspaceWithOwner(workspaceId);
 
         if (!workspace.getName().equals(request.getConfirmName().trim())) {
             throw new BusinessException(ErrorCode.WORKSPACE_DELETE_NAME_MISMATCH);
@@ -224,7 +199,7 @@ public class WorkspaceService {
     public List<MemberResponse> listMembers(Long workspaceId) {
         User currentUser = currentUserProvider.getCurrentUser();
         requireMember(workspaceId, currentUser.getId());
-        return workspaceMemberRepository.findByWorkspaceId(workspaceId).stream()
+        return workspaceMemberRepository.findByWorkspaceIdWithDetails(workspaceId).stream()
                 .map(workspaceMapper::toMemberResponse)
                 .toList();
     }
@@ -232,8 +207,8 @@ public class WorkspaceService {
     @Transactional
     public InvitationResponse inviteMember(Long workspaceId, InviteMemberRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Workspace workspace = getActiveWorkspace(workspaceId);
         requireWorkspaceAdmin(workspaceId, currentUser.getId());
+        Workspace workspace = getActiveWorkspaceWithOwner(workspaceId);
 
         String email = request.getEmail().trim().toLowerCase();
         User invitee = userRepository.findByEmailIgnoreCase(email)
@@ -248,7 +223,7 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.MEMBER_ALREADY_EXISTS, "Đã có lời mời đang chờ xác nhận");
         }
 
-        WorkspaceRole role = getRoleByName(request.getRoleName());
+        WorkspaceRole role = lookupCacheService.requireWorkspaceRole(request.getRoleName());
 
         WorkspaceInvitation invitation = WorkspaceInvitation.builder()
                 .workspace(workspace)
@@ -268,7 +243,9 @@ public class WorkspaceService {
     public List<InvitationResponse> listPendingInvitations(Long workspaceId) {
         User currentUser = currentUserProvider.getCurrentUser();
         requireWorkspaceAdmin(workspaceId, currentUser.getId());
-        return workspaceInvitationRepository.findByWorkspaceIdAndStatus(workspaceId, STATUS_PENDING).stream()
+        return workspaceInvitationRepository
+                .findByWorkspaceIdAndStatusWithDetails(workspaceId, STATUS_PENDING)
+                .stream()
                 .map(workspaceMapper::toInvitationResponse)
                 .toList();
     }
@@ -300,10 +277,14 @@ public class WorkspaceService {
             throw new BusinessException(ErrorCode.INVITATION_WORKSPACE_GONE);
         }
 
-        if (workspaceMemberRepository.existsByWorkspaceIdAndUserId(workspace.getId(), currentUser.getId())) {
+        String roleName = invitation.getRole().getRoleName();
+        var existingMember = workspaceMemberRepository.findByWorkspaceIdAndUserIdWithUserAndRole(
+                workspace.getId(), currentUser.getId());
+        if (existingMember.isPresent()) {
             invitation.setStatus(STATUS_ACCEPTED);
             workspaceInvitationRepository.save(invitation);
-            return workspaceMapper.toResponse(workspace, resolveMyRole(workspace.getId(), currentUser.getId()));
+            return workspaceMapper.toResponse(
+                    workspace, existingMember.get().getRole().getRoleName());
         }
 
         workspaceMemberRepository.save(WorkspaceMember.builder()
@@ -316,7 +297,7 @@ public class WorkspaceService {
         invitation.setStatus(STATUS_ACCEPTED);
         workspaceInvitationRepository.save(invitation);
 
-        return workspaceMapper.toResponse(workspace, invitation.getRole().getRoleName());
+        return workspaceMapper.toResponse(workspace, roleName);
     }
 
     @Transactional
@@ -335,25 +316,19 @@ public class WorkspaceService {
     @Transactional
     public MemberResponse updateMemberRole(Long workspaceId, Long targetUserId, UpdateMemberRoleRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        getActiveWorkspace(workspaceId);
         requireWorkspaceAdmin(workspaceId, currentUser.getId());
 
         WorkspaceMember member = workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, targetUserId)
+                .findByWorkspaceIdAndUserIdWithUserAndRole(workspaceId, targetUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "Thành viên không tồn tại"));
 
-        WorkspaceRole newRole = getRoleByName(request.getRoleName());
-        boolean wasAdmin = ROLE_ADMIN.equalsIgnoreCase(member.getRole().getRoleName());
-        boolean becomesMember = !ROLE_ADMIN.equalsIgnoreCase(newRole.getRoleName());
+        WorkspaceRole newRole = lookupCacheService.requireWorkspaceRole(request.getRoleName());
+        String oldRoleName = member.getRole().getRoleName();
+        String newRoleName = newRole.getRoleName();
+        boolean demotingLastAdmin =
+                ROLE_ADMIN.equalsIgnoreCase(oldRoleName) && !ROLE_ADMIN.equalsIgnoreCase(newRoleName);
 
-        if (wasAdmin && becomesMember && workspaceMemberRepository.countAdminsByWorkspaceId(workspaceId) <= 1) {
-            throw new BusinessException(ErrorCode.WORKSPACE_MIN_ONE_ADMIN);
-        }
-
-        if (currentUser.getId().equals(targetUserId)
-                && wasAdmin
-                && becomesMember
-                && workspaceMemberRepository.countAdminsByWorkspaceId(workspaceId) <= 1) {
+        if (demotingLastAdmin && workspaceMemberRepository.countAdminsByWorkspaceId(workspaceId) <= 1) {
             throw new BusinessException(ErrorCode.WORKSPACE_MIN_ONE_ADMIN);
         }
 
@@ -365,11 +340,10 @@ public class WorkspaceService {
     @Transactional
     public void removeMember(Long workspaceId, Long targetUserId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        getActiveWorkspace(workspaceId);
         requireWorkspaceAdmin(workspaceId, currentUser.getId());
 
         WorkspaceMember member = workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, targetUserId)
+                .findByWorkspaceIdAndUserIdWithUserAndRole(workspaceId, targetUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "Thành viên không tồn tại"));
 
         if (ROLE_ADMIN.equalsIgnoreCase(member.getRole().getRoleName())
@@ -383,11 +357,8 @@ public class WorkspaceService {
     @Transactional
     public void leaveWorkspace(Long workspaceId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        getActiveWorkspace(workspaceId);
 
-        WorkspaceMember member = workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, currentUser.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN));
+        WorkspaceMember member = loadMembership(workspaceId, currentUser.getId());
 
         if (ROLE_ADMIN.equalsIgnoreCase(member.getRole().getRoleName())
                 && workspaceMemberRepository.countAdminsByWorkspaceId(workspaceId) <= 1) {
@@ -399,7 +370,7 @@ public class WorkspaceService {
 
     private WorkspaceInvitation getValidPendingInvitation(String token) {
         WorkspaceInvitation invitation = workspaceInvitationRepository
-                .findByToken(token)
+                .findByTokenWithDetails(token)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVITATION_INVALID));
 
         if (!STATUS_PENDING.equals(invitation.getStatus())) {
@@ -415,10 +386,25 @@ public class WorkspaceService {
         return invitation;
     }
 
-    private Workspace getActiveWorkspace(Long workspaceId) {
+    private Workspace getActiveWorkspaceWithOwner(Long workspaceId) {
         return workspaceRepository
-                .findByIdAndDeletedFalse(workspaceId)
+                .findByIdAndDeletedFalseWithOwner(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
+    }
+
+    private WorkspaceMember loadMembership(Long workspaceId, Long userId) {
+        return workspaceMemberRepository
+                .findByWorkspaceIdAndUserIdWithDetails(workspaceId, userId)
+                .filter(m -> !Boolean.TRUE.equals(m.getWorkspace().getDeleted()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN));
+    }
+
+    private WorkspaceMember loadAdminMembership(Long workspaceId, Long userId) {
+        WorkspaceMember membership = loadMembership(workspaceId, userId);
+        if (!ROLE_ADMIN.equalsIgnoreCase(membership.getRole().getRoleName())) {
+            throw new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN);
+        }
+        return membership;
     }
 
     private void requireMember(Long workspaceId, Long userId) {
@@ -428,19 +414,51 @@ public class WorkspaceService {
     }
 
     private void requireWorkspaceAdmin(Long workspaceId, Long userId) {
-        WorkspaceMember member = workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, userId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN));
-        if (!ROLE_ADMIN.equalsIgnoreCase(member.getRole().getRoleName())) {
+        if (!workspaceMemberRepository.isWorkspaceAdmin(workspaceId, userId)) {
             throw new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN);
         }
     }
 
-    private String resolveMyRole(Long workspaceId, Long userId) {
-        return workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, userId)
-                .map(m -> m.getRole().getRoleName())
-                .orElse(null);
+    private String resolveUniqueCode(String baseCode) {
+        Set<String> existing = new HashSet<>();
+        for (String code : workspaceRepository.findExistingCodesByPrefix(baseCode)) {
+            existing.add(code.toLowerCase());
+        }
+        if (!existing.contains(baseCode.toLowerCase())) {
+            return truncateCode(baseCode);
+        }
+        for (int suffix = 2; suffix <= 500; suffix++) {
+            String candidate = baseCode + suffix;
+            if (!existing.contains(candidate.toLowerCase())) {
+                return truncateCode(candidate);
+            }
+        }
+        return truncateCode(baseCode + (System.currentTimeMillis() % 100000));
+    }
+
+    private String resolveUniqueSlug(String baseSlug) {
+        Set<String> existing = new HashSet<>();
+        for (String slug : workspaceRepository.findExistingSlugsByPrefix(baseSlug)) {
+            existing.add(slug.toLowerCase());
+        }
+        if (!existing.contains(baseSlug.toLowerCase())) {
+            return truncateSlug(baseSlug);
+        }
+        for (int suffix = 2; suffix <= 500; suffix++) {
+            String candidate = baseSlug + "-" + suffix;
+            if (!existing.contains(candidate.toLowerCase())) {
+                return truncateSlug(candidate);
+            }
+        }
+        return truncateSlug(baseSlug + "-" + (System.currentTimeMillis() % 10000));
+    }
+
+    private static String truncateCode(String code) {
+        return code.length() > 50 ? code.substring(0, 50) : code;
+    }
+
+    private static String truncateSlug(String slug) {
+        return slug.length() > 150 ? slug.substring(0, 150) : slug;
     }
 
     /** #RGB / #RRGGBB hoặc rỗng. */
@@ -472,25 +490,6 @@ public class WorkspaceService {
         }
     }
 
-    private String resolveLogoUrl(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        String url = raw.trim();
-        if (url.length() > 500) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "logoUrl quá dài");
-        }
-        try {
-            URI uri = URI.create(url);
-            if (uri.getScheme() == null || (!uri.getScheme().equalsIgnoreCase("https") && !uri.getScheme().equalsIgnoreCase("http"))) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "logoUrl phải là http(s)");
-            }
-        } catch (IllegalArgumentException ex) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "logoUrl không hợp lệ");
-        }
-        return url;
-    }
-
     private boolean isSystemAdmin(User user) {
         if (user == null) {
             return false;
@@ -500,12 +499,5 @@ public class WorkspaceService {
         }
         return user.getEmail() != null
                 && SYSTEM_ADMIN_EMAIL.equalsIgnoreCase(user.getEmail().trim());
-    }
-
-    private WorkspaceRole getRoleByName(String roleName) {
-        return workspaceRoleRepository
-                .findByRoleNameIgnoreCase(roleName.trim())
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.VALIDATION_ERROR, "Vai trò không hợp lệ: " + roleName));
     }
 }

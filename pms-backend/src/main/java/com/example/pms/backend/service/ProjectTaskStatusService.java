@@ -41,14 +41,14 @@ public class ProjectTaskStatusService {
         if (taskStatusRepository.existsByProjectId(project.getId())) {
             return;
         }
-        for (DefaultColumn col : DEFAULT_COLUMNS) {
-            taskStatusRepository.save(TaskStatus.builder()
-                    .project(project)
-                    .statusName(col.name())
-                    .position(col.position())
-                    .colorCode(col.color())
-                    .build());
-        }
+        taskStatusRepository.saveAll(DEFAULT_COLUMNS.stream()
+                .map(col -> TaskStatus.builder()
+                        .project(project)
+                        .statusName(col.name())
+                        .position(col.position())
+                        .colorCode(col.color())
+                        .build())
+                .toList());
     }
 
     @Transactional(readOnly = true)
