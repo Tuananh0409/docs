@@ -1,5 +1,6 @@
 package com.example.pms.backend.service;
 
+import com.example.pms.backend.dto.task.AssignedTasksSummaryDto;
 import com.example.pms.backend.dto.task.CreateTaskCommentRequest;
 import com.example.pms.backend.dto.task.CreateTaskRequest;
 import com.example.pms.backend.dto.task.MyTaskResponse;
@@ -26,18 +27,22 @@ import com.example.pms.backend.repository.ProjectMemberRepository;
 import com.example.pms.backend.repository.TaskAssigneeRepository;
 import com.example.pms.backend.repository.TaskCommentRepository;
 import com.example.pms.backend.repository.TaskHistoryRepository;
-import com.example.pms.backend.repository.TaskPriorityRepository;
 import com.example.pms.backend.repository.TaskRepository;
 import com.example.pms.backend.repository.TaskStatusRepository;
 import com.example.pms.backend.repository.UserRepository;
+import com.example.pms.backend.repository.WorkspaceMemberRepository;
 import com.example.pms.backend.security.CurrentUserProvider;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,14 +57,15 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final TaskAssigneeRepository taskAssigneeRepository;
-    private final TaskPriorityRepository taskPriorityRepository;
     private final TaskStatusRepository taskStatusRepository;
     private final TaskCommentRepository taskCommentRepository;
     private final TaskHistoryRepository taskHistoryRepository;
     private final MilestoneRepository milestoneRepository;
     private final ProjectMemberRepository projectMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final ProjectAccessGuard projectAccessGuard;
+    private final LookupCacheService lookupCacheService;
     private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
@@ -68,8 +74,12 @@ public class TaskService {
         User currentUser = currentUserProvider.getCurrentUser();
         projectAccessGuard.requireProjectAccess(project, currentUser.getId());
 
-        return taskRepository.findByProjectIdWithDetails(projectId).stream()
-                .map(t -> toSummary(t, project))
+        List<Task> tasks = taskRepository.findByProjectIdWithDetails(projectId);
+        Map<Long, List<TaskAssigneeResponse>> assigneesByTaskId =
+                loadAssigneesByTaskIds(taskIdsOf(tasks));
+
+        return tasks.stream()
+                .map(t -> toSummary(t, project, assigneesByTaskId.getOrDefault(t.getId(), List.of())))
                 .toList();
     }
 
@@ -80,7 +90,9 @@ public class TaskService {
         projectAccessGuard.requireProjectAccess(project, currentUser.getId());
 
         Task task = loadTask(projectId, taskId);
-        return toDetail(task, project);
+        List<TaskAssigneeResponse> assignees =
+                loadAssigneesByTaskIds(List.of(task.getId())).getOrDefault(task.getId(), List.of());
+        return toDetail(task, project, assignees);
     }
 
     @Transactional
@@ -112,10 +124,10 @@ public class TaskService {
                 .build();
 
         task = taskRepository.save(task);
-        syncAssignees(project, task, request.getAssigneeUserIds(), currentUser);
+        List<TaskAssigneeResponse> assignees = syncAssignees(project, task, request.getAssigneeUserIds(), currentUser);
         recordHistory(task, currentUser, "created", null, task.getTitle());
 
-        return toDetail(task, project);
+        return toDetail(task, project, resolveAssigneesAfterSave(task, assignees));
     }
 
     @Transactional
@@ -135,7 +147,7 @@ public class TaskService {
         }
         if (request.getDescription() != null) {
             String newDesc = trimToNull(request.getDescription());
-            if (!java.util.Objects.equals(newDesc, task.getDescription())) {
+            if (!Objects.equals(newDesc, task.getDescription())) {
                 recordHistory(task, currentUser, "description", task.getDescription(), newDesc);
                 task.setDescription(newDesc);
             }
@@ -183,7 +195,7 @@ public class TaskService {
         } else if (parseRequestDate(request.getStartDate()) != null) {
             Instant newStart = toInstantStart(parseRequestDate(request.getStartDate()));
             validateTaskDates(project, newStart, task.getDeadline());
-            if (!java.util.Objects.equals(newStart, task.getStartDate())) {
+            if (!Objects.equals(newStart, task.getStartDate())) {
                 recordHistory(
                         task,
                         currentUser,
@@ -201,7 +213,7 @@ public class TaskService {
         } else if (parseRequestDate(request.getDeadline()) != null) {
             Instant newDeadline = toInstantEnd(parseRequestDate(request.getDeadline()));
             validateTaskDates(project, task.getStartDate(), newDeadline);
-            if (!java.util.Objects.equals(newDeadline, task.getDeadline())) {
+            if (!Objects.equals(newDeadline, task.getDeadline())) {
                 recordHistory(
                         task,
                         currentUser,
@@ -212,9 +224,7 @@ public class TaskService {
             }
         }
         validateTaskDates(project, task.getStartDate(), task.getDeadline());
-        if (request.getAssigneeUserIds() != null) {
-            syncAssignees(project, task, request.getAssigneeUserIds(), currentUser);
-        }
+        List<TaskAssigneeResponse> assignees = syncAssignees(project, task, request.getAssigneeUserIds(), currentUser);
         if (request.getReporterUserId() != null) {
             User newReporter = resolveReporter(project, request.getReporterUserId(), currentUser);
             if (!newReporter.getId().equals(task.getReporter().getId())) {
@@ -229,7 +239,7 @@ public class TaskService {
         }
 
         task = taskRepository.save(task);
-        return toDetail(task, project);
+        return toDetail(task, project, resolveAssigneesAfterSave(task, assignees));
     }
 
     @Transactional
@@ -257,29 +267,26 @@ public class TaskService {
     @Transactional(readOnly = true)
     public List<MyTaskResponse> listMine() {
         User currentUser = currentUserProvider.getCurrentUser();
-        return taskRepository.findAssignedToUser(currentUser.getId()).stream()
-                .filter(t -> !t.getProject().getDeleted())
-                .filter(t -> hasProjectAccess(t.getProject(), currentUser.getId()))
-                .map(t -> toMyTask(t))
+        List<Task> tasks = listAccessibleAssignedTasks(currentUser.getId());
+        Map<Long, List<TaskAssigneeResponse>> assigneesByTaskId =
+                loadAssigneesByTaskIds(taskIdsOf(tasks));
+
+        return tasks.stream()
+                .map(t -> toMyTask(t, assigneesByTaskId.getOrDefault(t.getId(), List.of())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public MyTasksSummaryResponse mineSummary() {
-        List<MyTaskResponse> mine = listMine();
-        long overdue =
-                mine.stream().filter(MyTaskResponse::isOverdue).count();
-        long inProgress = mine.stream()
-                .filter(t -> "In Progress".equalsIgnoreCase(t.getStatusName()))
-                .count();
-        long done = mine.stream()
-                .filter(t -> STATUS_DONE.equalsIgnoreCase(t.getStatusName()))
-                .count();
+        User currentUser = currentUserProvider.getCurrentUser();
+        AssignedTasksSummaryDto summary =
+                taskRepository.summarizeAccessibleAssignedTasks(currentUser.getId(), Instant.now());
+
         return MyTasksSummaryResponse.builder()
-                .totalAssigned(mine.size())
-                .overdue(overdue)
-                .inProgress(inProgress)
-                .done(done)
+                .totalAssigned(summary.total())
+                .overdue(summary.overdue())
+                .inProgress(summary.inProgress())
+                .done(summary.done())
                 .build();
     }
 
@@ -350,16 +357,16 @@ public class TaskService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.TASK_NOT_FOUND));
     }
 
-    private boolean hasProjectAccess(Project project, Long userId) {
-        try {
-            projectAccessGuard.requireProjectAccess(project, userId);
-            return true;
-        } catch (BusinessException ex) {
-            if (ex.getErrorCode() == ErrorCode.PROJECT_FORBIDDEN) {
-                return false;
-            }
-            throw ex;
+    private List<Task> listAccessibleAssignedTasks(Long userId) {
+        return taskRepository.findAccessibleAssignedToUser(userId);
+    }
+
+    private List<TaskAssigneeResponse> resolveAssigneesAfterSave(
+            Task task, List<TaskAssigneeResponse> synced) {
+        if (synced != null) {
+            return synced;
         }
+        return loadAssigneesByTaskIds(List.of(task.getId())).getOrDefault(task.getId(), List.of());
     }
 
     private User resolveReporter(Project project, Long reporterUserId, User fallback) {
@@ -373,33 +380,68 @@ public class TaskService {
         return reporter;
     }
 
-    private void syncAssignees(
+    private List<TaskAssigneeResponse> syncAssignees(
             Project project, Task task, List<Long> assigneeUserIds, User actor) {
         if (assigneeUserIds == null) {
-            return;
+            return null;
         }
-        Set<Long> unique = new HashSet<>(assigneeUserIds);
-        taskAssigneeRepository.deleteByTaskId(task.getId());
-        // Flush deletes before re-insert; otherwise uq_task_assignees_task_user fires
-        // when keeping an existing assignee and adding another.
-        taskAssigneeRepository.flush();
+        Set<Long> target = new HashSet<>(assigneeUserIds);
+        Set<Long> current = task.getId() == null
+                ? Set.of()
+                : taskAssigneeRepository.findUserIdsByTaskId(task.getId());
+        if (current.equals(target)) {
+            if (target.isEmpty()) {
+                return List.of();
+            }
+            return loadAssigneesByTaskIds(List.of(task.getId())).getOrDefault(task.getId(), List.of());
+        }
 
-        for (Long userId : unique) {
-            User assignee = userRepository
-                    .findById(userId)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-            ensureProjectMemberOrAdmin(project, assignee.getId());
+        Set<Long> memberUserIds = projectMemberRepository.findUserIdsByProjectId(project.getId());
+        Set<Long> adminUserIds =
+                workspaceMemberRepository.findAdminUserIdsByWorkspaceId(project.getWorkspace().getId());
+
+        Map<Long, User> usersById = target.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(target).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u));
+        if (usersById.size() != target.size()) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        if (task.getId() != null) {
+            taskAssigneeRepository.deleteByTaskId(task.getId());
+            // Flush deletes before re-insert; otherwise uq_task_assignees_task_user fires
+            // when keeping an existing assignee and adding another.
+            taskAssigneeRepository.flush();
+        }
+
+        for (Long userId : target) {
+            if (!memberUserIds.contains(userId) && !adminUserIds.contains(userId)) {
+                throw new BusinessException(
+                        ErrorCode.PROJECT_FORBIDDEN, "Chỉ gán được thành viên trong dự án");
+            }
             taskAssigneeRepository.save(TaskAssignee.builder()
                     .task(task)
-                    .user(assignee)
+                    .user(usersById.get(userId))
                     .build());
         }
         recordHistory(
                 task,
                 actor,
                 "assignees",
-                null,
-                unique.isEmpty() ? "none" : unique.toString());
+                formatAssigneeIds(current),
+                formatAssigneeIds(target));
+        return target.stream()
+                .sorted()
+                .map(id -> toAssigneeResponse(usersById.get(id)))
+                .toList();
+    }
+
+    private static String formatAssigneeIds(Set<Long> ids) {
+        if (ids.isEmpty()) {
+            return "none";
+        }
+        return ids.stream().sorted().map(String::valueOf).collect(Collectors.joining(", "));
     }
 
     private void ensureProjectMemberOrAdmin(Project project, Long userId) {
@@ -436,24 +478,7 @@ public class TaskService {
     }
 
     private TaskPriority resolvePriority(String priorityName) {
-        String name =
-                priorityName == null || priorityName.isBlank()
-                        ? DEFAULT_PRIORITY
-                        : mapLegacyTaskPriority(priorityName.trim());
-        return taskPriorityRepository
-                .findByNameIgnoreCase(name)
-                .orElseThrow(() ->
-                        new BusinessException(
-                                ErrorCode.VALIDATION_ERROR,
-                                "Độ ưu tiên không hợp lệ: " + name));
-    }
-
-    private String mapLegacyTaskPriority(String raw) {
-        return switch (raw.toLowerCase()) {
-            case "urgent" -> "Highest";
-            case "medium" -> "Medium";
-            default -> raw;
-        };
+        return lookupCacheService.requireTaskPriority(priorityName, DEFAULT_PRIORITY);
     }
 
     private void validateTaskDates(Project project, Instant startDate, Instant deadline) {
@@ -529,17 +554,36 @@ public class TaskService {
         return task.getDeadline().isBefore(Instant.now());
     }
 
-    private List<TaskAssigneeResponse> loadAssignees(Long taskId) {
-        return taskAssigneeRepository.findByTaskIdWithUser(taskId).stream()
-                .map(ta -> TaskAssigneeResponse.builder()
-                        .userId(ta.getUser().getId())
-                        .username(ta.getUser().getUsername())
-                        .email(ta.getUser().getEmail())
-                        .build())
-                .toList();
+    private static List<Long> taskIdsOf(List<Task> tasks) {
+        return tasks.stream().map(Task::getId).toList();
     }
 
-    private TaskSummaryResponse toSummary(Task task, Project project) {
+    private Map<Long, List<TaskAssigneeResponse>> loadAssigneesByTaskIds(List<Long> taskIds) {
+        if (taskIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<TaskAssigneeResponse>> grouped = new HashMap<>();
+        for (TaskAssignee assignee : taskAssigneeRepository.findByTaskIdInWithUser(taskIds)) {
+            grouped.computeIfAbsent(assignee.getTask().getId(), k -> new ArrayList<>())
+                    .add(toAssigneeResponse(assignee));
+        }
+        return grouped;
+    }
+
+    private TaskAssigneeResponse toAssigneeResponse(TaskAssignee assignee) {
+        return toAssigneeResponse(assignee.getUser());
+    }
+
+    private TaskAssigneeResponse toAssigneeResponse(User user) {
+        return TaskAssigneeResponse.builder()
+                .userId(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .build();
+    }
+
+    private TaskSummaryResponse toSummary(
+            Task task, Project project, List<TaskAssigneeResponse> assignees) {
         return TaskSummaryResponse.builder()
                 .id(task.getId())
                 .taskKey(taskKey(project, task))
@@ -559,13 +603,13 @@ public class TaskService {
                 .createdByUsername(task.getCreatedBy().getUsername())
                 .reporterUserId(task.getReporter().getId())
                 .reporterUsername(task.getReporter().getUsername())
-                .assignees(loadAssignees(task.getId()))
+                .assignees(assignees)
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
                 .build();
     }
 
-    private TaskResponse toDetail(Task task, Project project) {
+    private TaskResponse toDetail(Task task, Project project, List<TaskAssigneeResponse> assignees) {
         return TaskResponse.builder()
                 .id(task.getId())
                 .projectId(project.getId())
@@ -588,13 +632,13 @@ public class TaskService {
                 .createdByUsername(task.getCreatedBy().getUsername())
                 .reporterUserId(task.getReporter().getId())
                 .reporterUsername(task.getReporter().getUsername())
-                .assignees(loadAssignees(task.getId()))
+                .assignees(assignees)
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
                 .build();
     }
 
-    private MyTaskResponse toMyTask(Task task) {
+    private MyTaskResponse toMyTask(Task task, List<TaskAssigneeResponse> assignees) {
         Project project = task.getProject();
         return MyTaskResponse.builder()
                 .id(task.getId())
@@ -614,7 +658,7 @@ public class TaskService {
                 .projectName(project.getName())
                 .projectSlug(project.getSlug())
                 .projectCode(project.getCode())
-                .assignees(loadAssignees(task.getId()))
+                .assignees(assignees)
                 .updatedAt(task.getUpdatedAt())
                 .build();
     }

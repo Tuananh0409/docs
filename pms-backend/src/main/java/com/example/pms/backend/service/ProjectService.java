@@ -19,18 +19,16 @@ import com.example.pms.backend.exception.BusinessException;
 import com.example.pms.backend.exception.ErrorCode;
 import com.example.pms.backend.repository.ProjectMemberRepository;
 import com.example.pms.backend.repository.ProjectRepository;
-import com.example.pms.backend.repository.ProjectRoleRepository;
-import com.example.pms.backend.repository.ProjectPriorityRepository;
-import com.example.pms.backend.repository.ProjectStatusRepository;
 import com.example.pms.backend.repository.UserRepository;
 import com.example.pms.backend.repository.WorkspaceMemberRepository;
-import com.example.pms.backend.repository.WorkspaceRepository;
 import com.example.pms.backend.security.CurrentUserProvider;
 import com.example.pms.backend.util.SlugUtils;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,40 +39,41 @@ public class ProjectService {
 
     private static final String ROLE_ADMIN = "Admin";
     private static final String ROLE_PM = "PM";
+    private static final String ROLE_LEAD = "Lead";
     private static final String STATUS_ACTIVE = "Active";
     private static final String PRIVACY_PRIVATE = "PRIVATE";
     private static final String DEFAULT_PRIORITY = "Medium";
 
     private final ProjectRepository projectRepository;
     private final ProjectMemberRepository projectMemberRepository;
-    private final ProjectRoleRepository projectRoleRepository;
-    private final ProjectStatusRepository projectStatusRepository;
-    private final ProjectPriorityRepository projectPriorityRepository;
-    private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final ProjectMemberService projectMemberService;
     private final ProjectTaskStatusService projectTaskStatusService;
+    private final LookupCacheService lookupCacheService;
     private final CurrentUserProvider currentUserProvider;
 
     @Transactional(readOnly = true)
     public List<ProjectSummaryResponse> listByWorkspace(Long workspaceId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        requireWorkspaceMember(workspaceId, currentUser.getId());
+        if (!workspaceMemberRepository.existsByWorkspaceIdAndUserId(workspaceId, currentUser.getId())) {
+            throw new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN);
+        }
 
-        return projectRepository
-                .findVisibleByWorkspaceIdAndUserId(workspaceId, currentUser.getId())
-                .stream()
-                .map(project -> toSummary(project, currentUser.getId()))
+        return projectRepository.findVisibleProjectsWithMyRole(workspaceId, currentUser.getId()).stream()
+                .map(row -> {
+                    Project project = (Project) row[0];
+                    String myRole = (String) row[1];
+                    return toSummary(project, workspaceId, myRole);
+                })
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public ProjectResponse getById(Long workspaceId, Long projectId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
-        requireProjectAccess(project, currentUser.getId());
-        return toDetail(project, currentUser.getId());
+        ProjectWithAccess loaded = loadProjectWithAccess(workspaceId, projectId, currentUser.getId());
+        return toDetail(loaded.project(), loaded.access());
     }
 
     @Transactional
@@ -83,9 +82,7 @@ public class ProjectService {
         WorkspaceMember membership = requireWorkspaceMember(workspaceId, currentUser.getId());
         requireCanCreateProject(membership);
 
-        Workspace workspace = workspaceRepository
-                .findByIdAndDeletedFalse(workspaceId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
+        Workspace workspace = membership.getWorkspace();
 
         String name = request.getName().trim();
         if (projectRepository.existsByWorkspaceIdAndNameIgnoreCaseAndDeletedFalse(workspaceId, name)) {
@@ -120,24 +117,23 @@ public class ProjectService {
 
         project = projectRepository.save(project);
         projectTaskStatusService.seedDefaultColumns(project);
-        projectMemberService.addMember(project, projectLead, ROLE_PM);
-        if (!projectLead.getId().equals(currentUser.getId())) {
-            projectMemberService.addMember(project, currentUser, "Member");
-        }
+        projectMemberService.addMembersOnProjectCreate(project, projectLead, currentUser);
 
-        return toDetail(project, currentUser.getId());
+        return toDetail(project, accessAfterCreate(membership, projectLead, currentUser));
     }
 
     @Transactional
     public ProjectResponse update(Long workspaceId, Long projectId, UpdateProjectRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
+        ProjectWithAccess loaded = loadProjectWithAccess(workspaceId, projectId, currentUser.getId());
+        Project project = loaded.project();
+        ProjectAccessInfo access = loaded.access();
         if (isPriorityOnlyUpdate(request)) {
-            requireProjectAccess(project, currentUser.getId());
-        } else if (isStatusOnlyUpdate(request) || isPrivacyOnlyUpdate(request)) {
-            requireProjectManage(project, currentUser.getId());
-        } else {
-            requireProjectManage(project, currentUser.getId());
+            if (access.myRole() == null) {
+                throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
+            }
+        } else if (!access.canManage()) {
+            throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
         }
 
         if (request.getName() != null && !request.getName().isBlank()) {
@@ -183,28 +179,29 @@ public class ProjectService {
         }
 
         project = projectRepository.save(project);
-        project = reloadProjectWithDetails(workspaceId, project.getId());
-        return toDetail(project, currentUser.getId());
+        return toDetail(project, access);
     }
 
     @Transactional
     public void delete(Long workspaceId, Long projectId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
-        if (!isWorkspaceAdmin(workspaceId, currentUser.getId())) {
+        if (!workspaceMemberRepository.isWorkspaceAdmin(workspaceId, currentUser.getId())) {
             throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
         }
-        project.setDeleted(true);
-        projectRepository.save(project);
+        if (projectRepository.softDeleteByIdAndWorkspaceId(projectId, workspaceId) == 0) {
+            throw new BusinessException(ErrorCode.PROJECT_NOT_FOUND);
+        }
     }
 
     @Transactional(readOnly = true)
     public List<ProjectMemberResponse> listMembers(Long workspaceId, Long projectId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
-        requireProjectAccess(project, currentUser.getId());
+        ProjectAccessInfo access = resolveProjectAccessInfo(workspaceId, projectId, currentUser.getId());
+        if (access.myRole() == null) {
+            throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
+        }
 
-        return projectMemberRepository.findByProjectIdOrderByJoinedAtAsc(projectId).stream()
+        return projectMemberRepository.findByProjectIdWithDetailsOrderByJoinedAtAsc(projectId).stream()
                 .map(this::toMemberResponse)
                 .toList();
     }
@@ -213,9 +210,13 @@ public class ProjectService {
     public ProjectMemberResponse addMember(
             Long workspaceId, Long projectId, AddProjectMemberRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
-        requireProjectMemberManage(project, currentUser.getId());
+        ProjectAccessInfo access = resolveProjectAccessInfo(workspaceId, projectId, currentUser.getId());
+        if (!access.canManageMembers()) {
+            throw new BusinessException(
+                    ErrorCode.PROJECT_FORBIDDEN, "Chỉ PM dự án hoặc Admin workspace mới quản lý thành viên");
+        }
 
+        Project project = loadProjectRef(workspaceId, projectId);
         User user = userRepository
                 .findById(request.getUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -231,17 +232,17 @@ public class ProjectService {
             Long userId,
             UpdateProjectMemberRoleRequest request) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
-        requireProjectMemberManage(project, currentUser.getId());
+        ProjectAccessInfo access = resolveProjectAccessInfo(workspaceId, projectId, currentUser.getId());
+        if (!access.canManageMembers()) {
+            throw new BusinessException(
+                    ErrorCode.PROJECT_FORBIDDEN, "Chỉ PM dự án hoặc Admin workspace mới quản lý thành viên");
+        }
 
         ProjectMember member = projectMemberRepository
                 .findByProjectIdAndUserId(projectId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "Thành viên không thuộc dự án"));
 
-        ProjectRole newRole = projectRoleRepository
-                .findByRoleNameIgnoreCase(request.getRoleName().trim())
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.VALIDATION_ERROR, "Vai trò project không hợp lệ: " + request.getRoleName()));
+        ProjectRole newRole = projectMemberService.requireProjectRole(request.getRoleName().trim());
 
         String oldRole = member.getRole().getRoleName();
         if (ROLE_PM.equalsIgnoreCase(oldRole) && !ROLE_PM.equalsIgnoreCase(newRole.getRoleName())) {
@@ -257,8 +258,11 @@ public class ProjectService {
     @Transactional
     public void removeMember(Long workspaceId, Long projectId, Long userId) {
         User currentUser = currentUserProvider.getCurrentUser();
-        Project project = loadProject(workspaceId, projectId);
-        requireProjectMemberManage(project, currentUser.getId());
+        ProjectAccessInfo access = resolveProjectAccessInfo(workspaceId, projectId, currentUser.getId());
+        if (!access.canManageMembers()) {
+            throw new BusinessException(
+                    ErrorCode.PROJECT_FORBIDDEN, "Chỉ PM dự án hoặc Admin workspace mới quản lý thành viên");
+        }
 
         ProjectMember member = projectMemberRepository
                 .findByProjectIdAndUserId(projectId, userId)
@@ -272,23 +276,31 @@ public class ProjectService {
         projectMemberRepository.delete(member);
     }
 
-    private Project loadProject(Long workspaceId, Long projectId) {
-        return reloadProjectWithDetails(workspaceId, projectId);
+    private record ProjectAccessInfo(
+            String myRole, boolean canManage, boolean canEditPriority, boolean canManageMembers) {}
+
+    private record ProjectWithAccess(Project project, ProjectAccessInfo access) {}
+
+    private ProjectWithAccess loadProjectWithAccess(Long workspaceId, Long projectId, Long userId) {
+        Object[] row = projectRepository
+                .findByIdWithAccess(projectId, workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
+        ProjectAccessInfo access = accessFromEffectiveRole((String) row[1]);
+        if (access.myRole() == null) {
+            throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
+        }
+        return new ProjectWithAccess((Project) row[0], access);
     }
 
-    private Project reloadProjectWithDetails(Long workspaceId, Long projectId) {
+    private Project loadProjectRef(Long workspaceId, Long projectId) {
         return projectRepository
-                .findByIdAndWorkspaceIdWithDetails(projectId, workspaceId)
+                .findRefByIdAndWorkspaceId(projectId, workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_NOT_FOUND));
     }
 
     private WorkspaceMember requireWorkspaceMember(Long workspaceId, Long userId) {
-        workspaceRepository
-                .findByIdAndDeletedFalse(workspaceId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
-
         return workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, userId)
+                .findByWorkspaceIdAndUserIdWithDetails(workspaceId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_FORBIDDEN));
     }
 
@@ -300,85 +312,67 @@ public class ProjectService {
         throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN, "Bạn không có quyền tạo dự án");
     }
 
-    private void requireProjectAccess(Project project, Long userId) {
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return;
-        }
-        if (projectMemberRepository.findByProjectIdAndUserId(project.getId(), userId).isPresent()) {
-            return;
-        }
-        throw new BusinessException(ErrorCode.PROJECT_FORBIDDEN);
+    private ProjectAccessInfo resolveProjectAccessInfo(Long workspaceId, Long projectId, Long userId) {
+        return projectMemberRepository
+                .findEffectiveProjectRoleName(workspaceId, projectId, userId)
+                .map(ProjectService::accessFromEffectiveRole)
+                .orElse(NO_PROJECT_ACCESS);
     }
 
-    private void requireProjectManage(Project project, Long userId) {
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return;
+    private static final ProjectAccessInfo NO_PROJECT_ACCESS =
+            new ProjectAccessInfo(null, false, false, false);
+
+    private static ProjectAccessInfo accessFromEffectiveRole(String role) {
+        if (role == null) {
+            return NO_PROJECT_ACCESS;
         }
+        if (ROLE_ADMIN.equalsIgnoreCase(role)) {
+            return new ProjectAccessInfo(ROLE_ADMIN, true, true, true);
+        }
+        return accessFromProjectRole(role);
+    }
+
+    private static ProjectAccessInfo accessAfterCreate(
+            WorkspaceMember membership, User projectLead, User currentUser) {
+        if (ROLE_ADMIN.equalsIgnoreCase(membership.getRole().getRoleName())) {
+            return new ProjectAccessInfo(ROLE_ADMIN, true, true, true);
+        }
+        if (projectLead.getId().equals(currentUser.getId())) {
+            return accessFromProjectRole(ROLE_PM);
+        }
+        return accessFromProjectRole("Member");
+    }
+
+    private static ProjectAccessInfo accessFromProjectRole(String role) {
+        boolean pm = ROLE_PM.equalsIgnoreCase(role);
+        boolean lead = ROLE_LEAD.equalsIgnoreCase(role);
+        return new ProjectAccessInfo(role, pm || lead, true, pm);
+    }
+
+    private User resolveProjectLead(Long workspaceId, Long requestedLeadUserId, User currentUser) {
+        Long leadId = requestedLeadUserId != null ? requestedLeadUserId : currentUser.getId();
+        if (leadId.equals(currentUser.getId())) {
+            return currentUser;
+        }
+        User lead = userRepository
+                .findById(leadId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (!workspaceMemberRepository.existsByWorkspaceIdAndUserId(workspaceId, lead.getId())) {
+            throw new BusinessException(
+                    ErrorCode.PROJECT_FORBIDDEN, "Project Lead phải là thành viên của phòng ban");
+        }
+        return lead;
+    }
+
+    private void ensureProjectLeadMembership(Project project, User lead) {
         projectMemberRepository
-                .findByProjectIdAndUserId(project.getId(), userId)
-                .filter(m -> {
-                    String role = m.getRole().getRoleName();
-                    return ROLE_PM.equalsIgnoreCase(role) || "Lead".equalsIgnoreCase(role);
-                })
-                .orElseThrow(() -> new BusinessException(ErrorCode.PROJECT_FORBIDDEN));
-    }
-
-    /** Thêm/sửa/xóa thành viên dự án: chỉ PM dự án hoặc Admin workspace. */
-    private void requireProjectMemberManage(Project project, Long userId) {
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return;
-        }
-        projectMemberRepository
-                .findByProjectIdAndUserId(project.getId(), userId)
-                .filter(m -> ROLE_PM.equalsIgnoreCase(m.getRole().getRoleName()))
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.PROJECT_FORBIDDEN, "Chỉ PM dự án hoặc Admin workspace mới quản lý thành viên"));
-    }
-
-    private boolean isWorkspaceAdmin(Long workspaceId, Long userId) {
-        return workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(workspaceId, userId)
-                .map(m -> ROLE_ADMIN.equalsIgnoreCase(m.getRole().getRoleName()))
-                .orElse(false);
-    }
-
-    private String resolveMyProjectRole(Long projectId, Long userId) {
-        return projectMemberRepository
-                .findByProjectIdAndUserId(projectId, userId)
-                .map(m -> m.getRole().getRoleName())
-                .orElse(null);
-    }
-
-    private String resolveEffectiveMyRole(Project project, Long userId) {
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return "Admin";
-        }
-        return resolveMyProjectRole(project.getId(), userId);
-    }
-
-    private boolean canManageProject(Project project, Long userId) {
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return true;
-        }
-        return projectMemberRepository
-                .findByProjectIdAndUserId(project.getId(), userId)
-                .filter(m -> {
-                    String role = m.getRole().getRoleName();
-                    return ROLE_PM.equalsIgnoreCase(role) || "Lead".equalsIgnoreCase(role);
-                })
-                .isPresent();
-    }
-
-    private boolean canEditProjectPriority(Project project, Long userId) {
-        if (canManageProject(project, userId)) {
-            return true;
-        }
-        if (isWorkspaceAdmin(project.getWorkspace().getId(), userId)) {
-            return true;
-        }
-        return projectMemberRepository
-                .findByProjectIdAndUserId(project.getId(), userId)
-                .isPresent();
+                .findByProjectIdAndUserId(project.getId(), lead.getId())
+                .ifPresentOrElse(
+                        member -> {
+                            member.setRole(projectMemberService.requireProjectRole(ROLE_PM));
+                            projectMemberRepository.save(member);
+                        },
+                        () -> projectMemberService.addMember(project, lead, ROLE_PM, true));
     }
 
     private boolean isPriorityOnlyUpdate(UpdateProjectRequest request) {
@@ -442,62 +436,36 @@ public class ProjectService {
         return "privacy".equals(except) || !privacySet;
     }
 
-    private User resolveProjectLead(Long workspaceId, Long requestedLeadUserId, User currentUser) {
-        Long leadId = requestedLeadUserId != null ? requestedLeadUserId : currentUser.getId();
-        User lead = userRepository
-                .findById(leadId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        if (!workspaceMemberRepository.existsByWorkspaceIdAndUserId(workspaceId, lead.getId())) {
-            throw new BusinessException(
-                    ErrorCode.PROJECT_FORBIDDEN, "Project Lead phải là thành viên của phòng ban");
-        }
-        return lead;
-    }
-
-    private void ensureProjectLeadMembership(Project project, User lead) {
-        projectMemberRepository
-                .findByProjectIdAndUserId(project.getId(), lead.getId())
-                .ifPresentOrElse(
-                        member -> {
-                            ProjectRole pmRole = projectRoleRepository
-                                    .findByRoleNameIgnoreCase(ROLE_PM)
-                                    .orElseThrow();
-                            member.setRole(pmRole);
-                            projectMemberRepository.save(member);
-                        },
-                        () -> projectMemberService.addMember(project, lead, ROLE_PM));
-    }
-
     private ProjectStatus resolveStatus(String statusName) {
-        String name = statusName == null || statusName.isBlank() ? STATUS_ACTIVE : statusName.trim();
-        return projectStatusRepository
-                .findByStatusNameIgnoreCase(name)
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.VALIDATION_ERROR, "Trạng thái dự án không hợp lệ: " + name));
+        return lookupCacheService.requireProjectStatus(statusName, STATUS_ACTIVE);
     }
 
     private ProjectPriority resolvePriority(String priorityName) {
-        String name = priorityName == null || priorityName.isBlank() ? DEFAULT_PRIORITY : priorityName.trim();
-        return projectPriorityRepository
-                .findByNameIgnoreCase(name)
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.VALIDATION_ERROR, "Độ ưu tiên dự án không hợp lệ: " + name));
+        return lookupCacheService.requireProjectPriority(priorityName, DEFAULT_PRIORITY);
     }
 
     private String resolveProjectCode(String workspaceCode, String projectName, String manualCode) {
         String base = manualCode != null && !manualCode.isBlank()
                 ? SlugUtils.sanitizeManualDepartmentCode(manualCode)
                 : SlugUtils.toDepartmentCode(projectName);
-        String code = workspaceCode + "-" + base;
-        int suffix = 1;
-        while (projectRepository.existsByCodeIgnoreCaseAndDeletedFalse(code)) {
-            suffix++;
-            code = workspaceCode + "-" + base + suffix;
-            if (suffix > 500) {
-                code = workspaceCode + "-" + (System.currentTimeMillis() % 100000);
-                break;
+        String prefix = workspaceCode + "-" + base;
+        Set<String> existing = new HashSet<>();
+        for (String existingCode : projectRepository.findExistingCodesByPrefix(prefix)) {
+            existing.add(existingCode.toLowerCase());
+        }
+        if (!existing.contains(prefix.toLowerCase())) {
+            return truncateCode(prefix);
+        }
+        for (int suffix = 2; suffix <= 500; suffix++) {
+            String candidate = prefix + suffix;
+            if (!existing.contains(candidate.toLowerCase())) {
+                return truncateCode(candidate);
             }
         }
+        return truncateCode(prefix + (System.currentTimeMillis() % 100000));
+    }
+
+    private static String truncateCode(String code) {
         return code.length() > 50 ? code.substring(0, 50) : code;
     }
 
@@ -505,10 +473,22 @@ public class ProjectService {
         String part = manualSlug != null && !manualSlug.isBlank()
                 ? SlugUtils.toSlug(manualSlug.trim())
                 : SlugUtils.toSlug(projectName);
-        String slug = workspaceSlug + "-" + part;
-        if (projectRepository.existsBySlugIgnoreCaseAndDeletedFalse(slug)) {
-            slug = slug + "-" + System.currentTimeMillis() % 10000;
+        String prefix = workspaceSlug + "-" + part;
+        Set<String> existing = new HashSet<>();
+        for (String existingSlug : projectRepository.findExistingSlugsByPrefix(prefix)) {
+            existing.add(existingSlug.toLowerCase());
         }
+        if (!existing.contains(prefix.toLowerCase())) {
+            return truncateSlug(prefix);
+        }
+        String candidate = prefix + "-" + System.currentTimeMillis() % 10000;
+        while (existing.contains(candidate.toLowerCase())) {
+            candidate = prefix + "-" + System.currentTimeMillis() % 10000;
+        }
+        return truncateSlug(candidate);
+    }
+
+    private static String truncateSlug(String slug) {
         return slug.length() > 150 ? slug.substring(0, 150) : slug;
     }
 
@@ -551,8 +531,7 @@ public class ProjectService {
         return value.trim();
     }
 
-    private ProjectSummaryResponse toSummary(Project project, Long userId) {
-        String myRole = resolveEffectiveMyRole(project, userId);
+    private ProjectSummaryResponse toSummary(Project project, Long workspaceId, String myRole) {
         return ProjectSummaryResponse.builder()
                 .id(project.getId())
                 .name(project.getName())
@@ -564,12 +543,11 @@ public class ProjectService {
                 .priorityColorCode(project.getPriority() != null ? project.getPriority().getColorCode() : null)
                 .priorityWeight(project.getPriority() != null ? project.getPriority().getWeight() : null)
                 .myRole(myRole)
-                .workspaceId(project.getWorkspace().getId())
+                .workspaceId(workspaceId)
                 .build();
     }
 
-    private ProjectResponse toDetail(Project project, Long userId) {
-        String role = resolveEffectiveMyRole(project, userId);
+    private ProjectResponse toDetail(Project project, ProjectAccessInfo access) {
         return ProjectResponse.builder()
                 .id(project.getId())
                 .workspaceId(project.getWorkspace().getId())
@@ -593,9 +571,9 @@ public class ProjectService {
                         project.getProjectManager() != null
                                 ? project.getProjectManager().getUsername()
                                 : null)
-                .myRole(role)
-                .canManage(canManageProject(project, userId))
-                .canEditPriority(canEditProjectPriority(project, userId))
+                .myRole(access.myRole())
+                .canManage(access.canManage())
+                .canEditPriority(access.canEditPriority())
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())
                 .build();
